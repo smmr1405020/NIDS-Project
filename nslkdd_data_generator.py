@@ -15,10 +15,10 @@ from torch.utils.data import DataLoader
 def load_nslkdd(train_data = True):
 
     nRowsRead = None  # specify 'None' if want to read whole file
-    df1 = pd.read_csv('.\\Dataset_NSLKDD\\kdd_train.csv', delimiter=',', nrows=nRowsRead)
+    df1 = pd.read_csv('./Dataset_NSLKDD/kdd_train.csv', delimiter=',', nrows=nRowsRead)
     df1.dataframeName = 'kdd_train.csv'
 
-    df2 = pd.read_csv('.\\Dataset_NSLKDD\\kdd_test.csv', delimiter=',', nrows=nRowsRead)
+    df2 = pd.read_csv('./Dataset_NSLKDD/kdd_test.csv', delimiter=',', nrows=nRowsRead)
     df2.dataframeName = 'kdd_test.csv'
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
