@@ -107,9 +107,9 @@ class NSLKDD_dataset_train(Dataset):
 
     def get_input_size(self):
         (a , count) = np.unique(self.y , return_counts=True)
-        # print(a)
-        # print(count)
-        # print(np.sum(count))
+        print(a)
+        print(count)
+        print(np.sum(count))
         return self.x.shape[1]
 
 

@@ -216,7 +216,7 @@ def train_idec():
 
             reconstr_loss = F.mse_loss(x_bar, x)
             kl_loss = F.kl_div(q.log(), p[idx], reduction='batchmean')
-            loss =  reconstr_loss
+            loss =  args.gamma*kl_loss + reconstr_loss
 
             # print("r")
             # print(reconstr_loss)
