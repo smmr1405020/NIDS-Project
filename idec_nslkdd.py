@@ -12,7 +12,7 @@ from torch.nn import Linear
 import args
 from nslkdd_data_generator import NSLKDD_dataset_train, cluster_acc
 
-device = torch.device('cpu' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 dataset = NSLKDD_dataset_train()
 
 n_clusters = dataset.get_input_size()
