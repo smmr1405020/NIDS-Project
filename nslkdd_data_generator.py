@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 def load_nslkdd(train_data = True):
 
-    nRowsRead = 1000  # specify 'None' if want to read whole file
+    nRowsRead = None  # specify 'None' if want to read whole file
     df1 = pd.read_csv('.\Dataset_NSLKDD\kdd_train.csv', delimiter=',', nrows=nRowsRead)
     df1.dataframeName = 'kdd_train.csv'
 
@@ -106,7 +106,12 @@ class NSLKDD_dataset_train(Dataset):
                torch.LongTensor([idx]).squeeze()
 
     def get_input_size(self):
+        (a , count) = np.unique(self.y , return_counts=True)
+        # print(a)
+        # print(count)
+        # print(np.sum(count))
         return self.x.shape[1]
+
 
     def get_n_clusters(self):
         return len(np.unique(self.y))
@@ -155,7 +160,9 @@ def cluster_acc(y_true, y_pred):
     return sm * 1.0 / y_pred.size
 
 
-# dataset = NSLKDD_dataset_train()
+dataset = NSLKDD_dataset_train()
+dataset.get_input_size()
+
 # train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
 #
 # print(dataset.get_input_size())

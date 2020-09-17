@@ -12,7 +12,7 @@ from torch.nn import Linear
 import args
 from nslkdd_data_generator import NSLKDD_dataset_train, cluster_acc
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu' if torch.cuda.is_available() else 'cpu')
 dataset = NSLKDD_dataset_train()
 
 n_clusters = dataset.get_input_size()
@@ -89,9 +89,9 @@ class IDEC(nn.Module):
         torch.nn.init.xavier_normal_(self.cluster_layer.data)
 
     def pretrain(self, path=''):
-        if path == '':
-            pretrain_ae(self.ae)
-        # load pretrain weights
+        # if path == '':
+        #     pretrain_ae(self.ae)
+        # # load pretrain weights
         self.ae.load_state_dict(torch.load(self.pretrain_path))
         print('load pretrained ae from', path)
 
@@ -116,8 +116,8 @@ def pretrain_ae(model):
     '''
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     print(model)
-    optimizer = Adam(model.parameters(), lr=args.lr)
-    for epoch in range(1000):
+    optimizer = Adam(model.parameters(), lr=args.lr_ae)
+    for epoch in range(100):
         total_loss = 0.
         batch_num = 0
         for batch_idx, (x, y, idx) in enumerate(train_loader):
@@ -216,7 +216,11 @@ def train_idec():
 
             reconstr_loss = F.mse_loss(x_bar, x)
             kl_loss = F.kl_div(q.log(), p[idx], reduction='batchmean')
-            loss = args.gamma * kl_loss + reconstr_loss
+            loss =  reconstr_loss
+
+            # print("r")
+            # print(reconstr_loss)
+            # print(kl_loss)
 
             optimizer.zero_grad()
             loss.backward()
