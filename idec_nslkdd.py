@@ -1,23 +1,25 @@
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
-from sklearn.metrics import adjusted_rand_score as ari_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.nn import Linear
 import args
-from nslkdd_data_generator import NSLKDD_dataset_train, cluster_acc
+from nslkdd_data_generator import NSLKDD_dataset_train
+from sklearn.metrics import confusion_matrix
+
+np.random.seed(12345)
+torch.manual_seed(12345)
+import random
+
+random.seed(12345)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 dataset = NSLKDD_dataset_train()
 
 n_clusters = dataset.get_input_size()
 n_input = dataset.get_input_size()
-
 
 
 class AE(nn.Module):
@@ -57,59 +59,6 @@ class AE(nn.Module):
         return x_bar, z
 
 
-class IDEC(nn.Module):
-
-    def __init__(self,
-                 n_enc_1,
-                 n_enc_2,
-                 n_enc_3,
-                 n_dec_1,
-                 n_dec_2,
-                 n_dec_3,
-                 n_input,
-                 n_z,
-                 n_clusters,
-                 alpha=1.0,
-                 pretrain_path='data/ae_mnist.pkl'):
-        super(IDEC, self).__init__()
-        self.alpha = alpha
-        self.pretrain_path = pretrain_path
-
-        self.ae = AE(
-            n_enc_1=n_enc_1,
-            n_enc_2=n_enc_2,
-            n_enc_3=n_enc_3,
-            n_dec_1=n_dec_1,
-            n_dec_2=n_dec_2,
-            n_dec_3=n_dec_3,
-            n_input=n_input,
-            n_z=n_z)
-        # cluster layer
-        self.cluster_layer = Parameter(torch.Tensor(n_clusters, n_z))
-        torch.nn.init.xavier_normal_(self.cluster_layer.data)
-
-    def pretrain(self, path=''):
-        # if path == '':
-        #     pretrain_ae(self.ae)
-        # # load pretrain weights
-        self.ae.load_state_dict(torch.load(self.pretrain_path))
-        print('load pretrained ae from', path)
-
-    def forward(self, x):
-        x_bar, z = self.ae(x)
-        # cluster
-        q = 1.0 / (1.0 + torch.sum(
-            torch.pow(z.unsqueeze(1) - self.cluster_layer, 2), 2) / self.alpha)
-        q = q.pow((self.alpha + 1.0) / 2.0)
-        q = (q.t() / torch.sum(q, 1)).t()
-        return x_bar, q
-
-
-def target_distribution(q):
-    weight = q ** 2 / q.sum(0)
-    return (weight.t() / weight.sum(1)).t()
-
-
 def pretrain_ae(model):
     '''
     pretrain autoencoder
@@ -117,11 +66,10 @@ def pretrain_ae(model):
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     print(model)
     optimizer = Adam(model.parameters(), lr=args.lr_ae)
-    for epoch in range(100):
+    for epoch in range(400):
         total_loss = 0.
         batch_num = 0
         for batch_idx, (x, y, idx) in enumerate(train_loader):
-
             x = x.float()
             x = x.to(device)
             batch_num = batch_idx
@@ -140,8 +88,8 @@ def pretrain_ae(model):
     print("model saved to {}.".format(args.pretrain_path))
 
 
-def train_idec():
-    model = IDEC(
+def train_autoencoder():
+    model = AE(
         n_enc_1=84,
         n_enc_2=63,
         n_enc_3=21,
@@ -149,82 +97,139 @@ def train_idec():
         n_dec_2=63,
         n_dec_3=84,
         n_input=n_input,
-        n_z=args.n_z,
-        n_clusters=n_clusters,
-        alpha=1.0,
-        pretrain_path=args.pretrain_path).to(device)
+        n_z=args.n_z).to(device)
 
-    #  model.pretrain('data/ae_mnist.pkl')
-    model.pretrain()
+    pretrain_ae(model)
 
-    train_loader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=False)
+    train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
     optimizer = Adam(model.parameters(), lr=args.lr)
 
-    # cluster parameter initiate
-    data = dataset.x
-    y = dataset.y
-    data = torch.Tensor(data).to(device)
-    x_bar, hidden = model.ae(data)
-
-    kmeans = KMeans(n_clusters=n_clusters, n_init=20)
-    y_pred = kmeans.fit_predict(hidden.data.cpu().numpy())
-    nmi_k = nmi_score(y_pred, y)
-    print("nmi score={:.4f}".format(nmi_k))
-
-    hidden = None
-    x_bar = None
-
-    y_pred_last = y_pred
-    model.cluster_layer.data = torch.tensor(kmeans.cluster_centers_).to(device)
-
     model.train()
-    for epoch in range(5000):
+    for epoch in range(400):
+        total_loss = 0.0
+        total_loss_r = 0.0
+        total_loss_c = 0.0
 
-        if epoch % args.update_interval == 0:
-
-            _, tmp_q = model(data)
-
-            # update target distribution p
-            tmp_q = tmp_q.data
-            p = target_distribution(tmp_q)
-
-            # evaluate clustering performance
-            y_pred = tmp_q.cpu().numpy().argmax(1)
-            delta_label = np.sum(y_pred != y_pred_last).astype(
-                np.float32) / y_pred.shape[0]
-            y_pred_last = y_pred
-
-            acc = cluster_acc(y, y_pred)
-            nmi = nmi_score(y, y_pred)
-            ari = ari_score(y, y_pred)
-            print('Iter {}'.format(epoch), ':Acc {:.4f}'.format(acc),
-                  ', nmi {:.4f}'.format(nmi), ', ari {:.4f}'.format(ari))
-
-            if epoch > 0 and delta_label < args.tol:
-                print('delta_label {:.4f}'.format(delta_label), '< tol',
-                      args.tol)
-                print('Reached tolerance threshold. Stopping training.')
-                break
-        for batch_idx, (x, _, idx) in enumerate(train_loader):
+        for batch_idx, (x, y_t, idx) in enumerate(train_loader):
 
             x = x.float()
             x = x.to(device)
-            idx = idx.to(device)
 
-            x_bar, q = model(x)
+            adj_mat = torch.zeros((x.shape[0], x.shape[0])).to(device)
+            for i in range(len(adj_mat)):
+                for j in range(len(adj_mat[i])):
+                    if y_t[i] == y_t[j]:
+                        adj_mat[i][j] = 1
+                    else:
+                        adj_mat[i][j] = 0
+
+            x_bar, z = model(x)
+
+            adj_cap = torch.matmul(z, z.T).to(device)
 
             reconstr_loss = F.mse_loss(x_bar, x)
-            kl_loss = F.kl_div(q.log(), p[idx], reduction='batchmean')
-            loss =  args.gamma*kl_loss + reconstr_loss
+            cl_loss = (1.0 / (len(adj_mat) * len(adj_mat))) * F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
 
-            # print("r")
-            # print(reconstr_loss)
-            # print(kl_loss)
+            loss = reconstr_loss + 0.05 * cl_loss
+
+            total_loss += loss.item()
+            total_loss_r += reconstr_loss.item()
+            total_loss_c += 0.05 * cl_loss.item()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+        print("epoch {} : Total loss: {:.3f} , Reconstruction Loss: {:.3f} , Cluster Loss: {:.3f}".format(epoch,
+                                                                                                          total_loss,
+                                                                                                          total_loss_r,
+                                                                                                          total_loss_c))
 
-train_idec()
+    return model
+
+
+class NIDS_PREDICTOR(nn.Module):
+
+    def __init__(self, ae_model):
+        super(NIDS_PREDICTOR, self).__init__()
+
+        self.fc1 = nn.Linear(args.n_z, 8)
+        self.fc2 = nn.Linear(8, 5)
+        self.ae = ae_model
+
+    def forward(self, x):
+        _, z = self.ae(x)
+        out_1 = torch.relu(self.fc1(z))
+        out_2 = self.fc2(out_1)
+
+        return out_2
+
+
+def train_full_model():
+    ae_model = train_autoencoder()
+    ae_model.requires_grad_(False)
+
+    main_model = NIDS_PREDICTOR(ae_model=ae_model).to(device)
+
+    train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    optimizer = Adam(main_model.parameters(), lr=0.001)
+
+    weights = dataset.get_weight()
+    weights = torch.FloatTensor(weights).to(device)
+
+    for epoch in range(1000):
+        total_loss = 0.0
+        batch_num = 0
+
+        num_correct = 0
+        num_examples = 0
+
+        for batch_idx, (x, y_t, idx) in enumerate(train_loader):
+            x = x.float()
+            x = x.to(device)
+            batch_num = batch_idx
+
+            optimizer.zero_grad()
+            y_pred = main_model(x)
+
+            y_t = y_t.to(device)
+
+            loss = torch.nn.CrossEntropyLoss(weight=weights)(y_pred, y_t)
+            total_loss += loss.item()
+
+            loss.backward()
+            optimizer.step()
+
+            correct = torch.eq(torch.max(torch.softmax(y_pred,dim=-1), dim=1)[1], y_t).view(-1)
+            num_correct += torch.sum(correct).item()
+            num_examples += correct.shape[0]
+
+        print("epoch {} loss={:.4f} Accuracy={:.5f}".format(epoch,
+                                                            total_loss / (batch_num + 1), num_correct / num_examples))
+        torch.save(main_model.state_dict(), args.train_path)
+    print("model saved to {}.".format(args.train_path))
+
+    train_loader = DataLoader(dataset, batch_size=4000, shuffle=True)
+    for batch_idx, (x, y_t, idx) in enumerate(train_loader):
+        x = x.float()
+        x = x.to(device)
+
+        y_pred = main_model(x)
+        y_t = y_t.to(device)
+
+        y_pred = torch.max(torch.softmax(y_pred,dim=-1), dim=1)[1]
+        y_pred = y_pred.cpu().detach().numpy()
+        y_t = y_t.cpu().detach().numpy()
+
+        print(confusion_matrix(y_t,y_pred))
+
+
+
+
+
+train_full_model()
+
+
+train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+
+

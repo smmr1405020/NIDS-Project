@@ -5,6 +5,11 @@ import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
+np.random.seed(12345)
+torch.manual_seed(12345)
+import random
+random.seed(12345)
+
 # for dirname, _, filenames in os.walk('.\Dataset_NSLKDD'):
 #     for filename in filenames:
 #         print(os.path.join(dirname, filename))
@@ -12,9 +17,25 @@ from torch.utils.data import DataLoader
 # # .\Dataset_NSLKDD\kdd_test.csv
 # # .\Dataset_NSLKDD\kdd_train.csv
 
+
+ATTACK_DICT = {
+'DoS' : ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm',
+               'worm'],
+'Probe' : ['ipsweep', 'mscan', 'nmap', 'portsweep', 'saint', 'satan'],
+'Privilege' : ['buffer_overflow', 'loadmodule', 'perl', 'ps', 'rootkit', 'sqlattack', 'xterm'],
+'Access' : ['ftp_write', 'guess_passwd', 'httptunnel', 'imap', 'multihop', 'named', 'phf', 'sendmail',
+                  'snmpgetattack', 'snmpguess', 'spy', 'warezclient', 'warezmaster', 'xlock', 'xsnoop'],
+'Normal' : ['normal']
+}
+
+ATTACK_MAP = dict()
+for k,v in ATTACK_DICT.items():
+    for att in v:
+        ATTACK_MAP[att] = k
+
 def load_nslkdd(train_data = True):
 
-    nRowsRead = None  # specify 'None' if want to read whole file
+    nRowsRead = 4000  # specify 'None' if want to read whole file
     df1 = pd.read_csv('./Dataset_NSLKDD/kdd_train.csv', delimiter=',', nrows=nRowsRead)
     df1.dataframeName = 'kdd_train.csv'
 
@@ -23,6 +44,8 @@ def load_nslkdd(train_data = True):
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
     obj_cols = list(obj_cols)
+
+    cat_dict = dict()
 
     for col in obj_cols:
 
@@ -51,10 +74,15 @@ def load_nslkdd(train_data = True):
             del df2[col]
 
         else:
+
+            df1[col] = df1[col].map(ATTACK_MAP)
+            df2[col] = df2[col].map(ATTACK_MAP)
+
             df1[col] = df1[col].astype('category')
 
-            cat_dict = dict()
             cat_dict_r = dict(enumerate(df1[col].cat.categories))
+
+
             for k, v in cat_dict_r.items():
                 cat_dict[v] = k
 
@@ -70,11 +98,23 @@ def load_nslkdd(train_data = True):
 
             df2[col] = df2[col].astype('int64')
 
+
+    # df1 = df1[df1.labels != cat_dict['Normal']]
+
     train_X = df1.values[:, :-1]
     train_Y = df1.values[:, -1]
 
+    train_Y = np.array(train_Y).astype(np.int64)
+
+    trYunique, trYcounts = np.unique(train_Y, return_counts=True)
+
+    weights = [min(5.0,max(trYcounts)/trYcounts[i]) for i in range(len(trYcounts))]
+    weights = np.array(weights)
+
     test_X = df2.values[:, :-1]
     test_Y = df2.values[:, -1]
+
+    test_Y = np.array(test_Y).astype(np.int64)
 
     scaler = StandardScaler()
     scaler.fit(train_X)
@@ -82,39 +122,44 @@ def load_nslkdd(train_data = True):
     train_X = scaler.transform(train_X)
     test_X = scaler.transform(test_X)
 
+
+
     if train_data:
-        return train_X , train_Y
+        return train_X , train_Y, weights
     else:
         return test_X, test_Y
-
-
-
 
 
 
 class NSLKDD_dataset_train(Dataset):
 
     def __init__(self):
-        self.x, self.y = load_nslkdd(True)
+        self.x, self.y, self.w = load_nslkdd(True)
 
     def __len__(self):
         return self.x.shape[0]
 
     def __getitem__(self, idx):
 
+
+
         return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
                torch.LongTensor([idx]).squeeze()
 
     def get_input_size(self):
-        (a , count) = np.unique(self.y , return_counts=True)
-        print(a)
-        print(count)
-        print(np.sum(count))
+        #(a , count) = np.unique(self.y , return_counts=True)
+        # print(a)
+        # print(count)
+        # print(np.sum(count))
         return self.x.shape[1]
 
 
     def get_n_clusters(self):
         return len(np.unique(self.y))
+
+
+    def get_weight(self):
+        return self.w
 
 
 
@@ -128,7 +173,7 @@ class NSLKDD_dataset_test(Dataset):
         return self.x.shape[0]
 
     def __getitem__(self, idx):
-        return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
+        return torch.from_numpy(np.array(self.x[idx])), torch.LongTensor(self.y[idx]), \
                torch.LongTensor([idx]).squeeze()
 
 
@@ -159,9 +204,8 @@ def cluster_acc(y_true, y_pred):
         sm += w[x, y]
     return sm * 1.0 / y_pred.size
 
-
-dataset = NSLKDD_dataset_train()
-dataset.get_input_size()
+# dataset = NSLKDD_dataset_train()
+# dataset.get_input_size()
 
 # train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
 #
@@ -172,3 +216,20 @@ dataset.get_input_size()
 #     print(x.shape)
 #     print(y)
 #     print(idx.shape)
+
+load_nslkdd(True)
+
+
+'''
+# lists to hold our attack classifications
+{
+'DoS' : ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm',
+               'worm']
+'Probe' : ['ipsweep', 'mscan', 'nmap', 'portsweep', 'saint', 'satan']
+'Privilege' : ['buffer_overflow', 'loadmdoule', 'perl', 'ps', 'rootkit', 'sqlattack', 'xterm']
+'Access' : ['ftp_write', 'guess_passwd', 'http_tunnel', 'imap', 'multihop', 'named', 'phf', 'sendmail',
+                  'snmpgetattack', 'snmpguess', 'spy', 'warezclient', 'warezmaster', 'xclock', 'xsnoop']
+'attack_labels' : ['Normal', 'DoS', 'Probe', 'Privilege', 'Access']
+}
+
+'''
