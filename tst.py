@@ -1,6 +1,8 @@
 import numpy as np
 import scipy.optimize
 
+import torch
+
 
 def cluster_acc(y_true, y_pred):
     """
@@ -40,6 +42,11 @@ y_pred = [1,2,0,2,2,0]
 y_true = np.array(y_true)
 y_pred = np.array(y_pred)
 
+a = np.array([[1,2,3],[4,5,6]])
+a = torch.FloatTensor(a)
+
+b = torch.sqrt(a)
+
 ind = scipy.optimize.linear_sum_assignment([[4,1,2],[2,6,1],[3,3,9],[1,2,1],[5,1,1],[6,6,5]])
 
-print(ind)
+print(b)

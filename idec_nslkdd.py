@@ -6,7 +6,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.nn import Linear
 import args
-from nslkdd_data_generator import NSLKDD_dataset_train
+from nslkdd_data_generator import NSLKDD_dataset_train , NSLKDD_dataset_test
 from sklearn.metrics import confusion_matrix
 
 np.random.seed(12345)
@@ -63,12 +63,16 @@ def pretrain_ae(model):
     '''
     pretrain autoencoder
     '''
+
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    print(model)
     optimizer = Adam(model.parameters(), lr=args.lr_ae)
-    for epoch in range(400):
+
+    min_train_loss = 1000000
+
+    for epoch in range(5):
         total_loss = 0.
         batch_num = 0
+
         for batch_idx, (x, y, idx) in enumerate(train_loader):
             x = x.float()
             x = x.to(device)
@@ -82,13 +86,21 @@ def pretrain_ae(model):
             loss.backward()
             optimizer.step()
 
-        print("epoch {} loss={:.4f}".format(epoch,
-                                            total_loss / (batch_num + 1)))
-        torch.save(model.state_dict(), args.pretrain_path)
-    print("model saved to {}.".format(args.pretrain_path))
+        if epoch % 1 == 0:
+            print("epoch {} loss={:.4f}".format(epoch,
+                                                total_loss / (batch_num + 1)))
+
+        if epoch == 0 or min_train_loss > total_loss:
+            min_train_loss = total_loss
+            torch.save(model.state_dict(), args.reconstruction_based_ae_pretrain_path)
+
+    print("model saved to {}.".format(args.reconstruction_based_ae_pretrain_path))
+
+    st_dict = torch.load(args.reconstruction_based_ae_pretrain_path)
+    model.load_state_dict(st_dict)
 
 
-def train_autoencoder():
+def train_autoencoder(load_pretrained_ae=False):
     model = AE(
         n_enc_1=84,
         n_enc_2=63,
@@ -99,29 +111,45 @@ def train_autoencoder():
         n_input=n_input,
         n_z=args.n_z).to(device)
 
-    pretrain_ae(model)
+    if not load_pretrained_ae:
+        pretrain_ae(model)
+    else:
+        st_dict = torch.load(args.reconstruction_based_ae_pretrain_path)
+        model.load_state_dict(st_dict)
 
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
     optimizer = Adam(model.parameters(), lr=args.lr)
 
+    adj_mat_batch = []
+
+    for batch_idx, (x, y_t, idx) in enumerate(train_loader):
+
+        x = x.float()
+        x = x.to(device)
+
+        adj_mat = torch.zeros((x.shape[0], x.shape[0])).to(device)
+        for i in range(len(adj_mat)):
+            for j in range(len(adj_mat[i])):
+                if y_t[i] == y_t[j]:
+                    adj_mat[i][j] = 1
+                else:
+                    adj_mat[i][j] = 0
+
+        adj_mat_batch.append(adj_mat)
+
+    min_total_loss = 100000
+
     model.train()
-    for epoch in range(400):
+    for epoch in range(5):
         total_loss = 0.0
         total_loss_r = 0.0
         total_loss_c = 0.0
 
         for batch_idx, (x, y_t, idx) in enumerate(train_loader):
-
             x = x.float()
             x = x.to(device)
 
-            adj_mat = torch.zeros((x.shape[0], x.shape[0])).to(device)
-            for i in range(len(adj_mat)):
-                for j in range(len(adj_mat[i])):
-                    if y_t[i] == y_t[j]:
-                        adj_mat[i][j] = 1
-                    else:
-                        adj_mat[i][j] = 0
+            adj_mat = adj_mat_batch[batch_idx]
 
             x_bar, z = model(x)
 
@@ -140,36 +168,79 @@ def train_autoencoder():
             loss.backward()
             optimizer.step()
 
-        print("epoch {} : Total loss: {:.3f} , Reconstruction Loss: {:.3f} , Cluster Loss: {:.3f}".format(epoch,
-                                                                                                          total_loss,
-                                                                                                          total_loss_r,
-                                                                                                          total_loss_c))
+        if epoch % 1 == 0:
+            print("epoch {} : Total loss: {:.3f} , Reconstruction Loss: {:.3f} , Cluster Loss: {:.3f}".format(epoch,
+                                                                                                              total_loss,
+                                                                                                              total_loss_r,
+                                                                                                              total_loss_c))
+
+        if epoch == 0 or min_total_loss > total_loss:
+            min_total_loss = total_loss
+            torch.save(model.state_dict(), args.trained_final_ae_path)
+
+    print("model saved to {}.".format(args.trained_final_ae_path))
+
+    st_dict = torch.load(args.trained_final_ae_path)
+    model.load_state_dict(st_dict)
 
     return model
 
 
 class NIDS_PREDICTOR(nn.Module):
 
-    def __init__(self, ae_model):
+    def __init__(self, ae_model, reconstruction_model):
         super(NIDS_PREDICTOR, self).__init__()
 
-        self.fc1 = nn.Linear(args.n_z, 8)
+        self.fc1 = nn.Linear(args.n_z+1, 8)
         self.fc2 = nn.Linear(8, 5)
         self.ae = ae_model
+        self.rec = reconstruction_model
 
     def forward(self, x):
+
         _, z = self.ae(x)
-        out_1 = torch.relu(self.fc1(z))
+        x_bar, _ = self.rec(x)
+
+        rec_loss = torch.sqrt(torch.sum((x - x_bar)**2, dim=1, keepdim=True))
+
+        z_c = torch.cat([z, rec_loss], dim=-1)
+
+        out_1 = torch.relu(self.fc1(z_c))
         out_2 = self.fc2(out_1)
 
         return out_2
 
 
-def train_full_model():
-    ae_model = train_autoencoder()
-    ae_model.requires_grad_(False)
+def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
+    if not load_trained_ae:
+        ae_model = train_autoencoder(load_pretrained_ae)
+        # ae_model.requires_grad_(False)
+    else:
+        ae_model = AE(
+            n_enc_1=84,
+            n_enc_2=63,
+            n_enc_3=21,
+            n_dec_1=21,
+            n_dec_2=63,
+            n_dec_3=84,
+            n_input=n_input,
+            n_z=args.n_z).to(device)
+        ae_model.load_state_dict(torch.load(args.trained_final_ae_path))
 
-    main_model = NIDS_PREDICTOR(ae_model=ae_model).to(device)
+
+    rec_model = AE(
+            n_enc_1=84,
+            n_enc_2=63,
+            n_enc_3=21,
+            n_dec_1=21,
+            n_dec_2=63,
+            n_dec_3=84,
+            n_input=n_input,
+            n_z=args.n_z).to(device)
+
+    rec_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
+
+    main_model = NIDS_PREDICTOR(ae_model=ae_model,reconstruction_model=rec_model).to(device)
 
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     optimizer = Adam(main_model.parameters(), lr=0.001)
@@ -177,7 +248,9 @@ def train_full_model():
     weights = dataset.get_weight()
     weights = torch.FloatTensor(weights).to(device)
 
-    for epoch in range(1000):
+    min_total_loss = 100000
+
+    for epoch in range(5):
         total_loss = 0.0
         batch_num = 0
 
@@ -190,7 +263,9 @@ def train_full_model():
             batch_num = batch_idx
 
             optimizer.zero_grad()
+
             y_pred = main_model(x)
+
 
             y_t = y_t.to(device)
 
@@ -200,36 +275,34 @@ def train_full_model():
             loss.backward()
             optimizer.step()
 
-            correct = torch.eq(torch.max(torch.softmax(y_pred,dim=-1), dim=1)[1], y_t).view(-1)
+            correct = torch.eq(torch.max(torch.softmax(y_pred, dim=-1), dim=1)[1], y_t).view(-1)
             num_correct += torch.sum(correct).item()
             num_examples += correct.shape[0]
 
-        print("epoch {} loss={:.4f} Accuracy={:.5f}".format(epoch,
-                                                            total_loss / (batch_num + 1), num_correct / num_examples))
-        torch.save(main_model.state_dict(), args.train_path)
-    print("model saved to {}.".format(args.train_path))
+        if epoch % 1 == 0:
+            print("epoch {} loss={:.4f} Accuracy={:.5f}".format(epoch,
+                                                                total_loss / (batch_num + 1),
+                                                                num_correct / num_examples))
 
-    train_loader = DataLoader(dataset, batch_size=4000, shuffle=True)
-    for batch_idx, (x, y_t, idx) in enumerate(train_loader):
+        if epoch == 0 or min_total_loss > total_loss:
+            min_total_loss = total_loss
+            torch.save(main_model.state_dict(), args.final_model_path)
+
+    print("model saved to {}.".format(args.final_model_path))
+
+    test_loader = DataLoader(NSLKDD_dataset_test(), batch_size=22544, shuffle=True)
+    for batch_idx, (x, y_t, idx) in enumerate(test_loader):
         x = x.float()
         x = x.to(device)
 
         y_pred = main_model(x)
         y_t = y_t.to(device)
 
-        y_pred = torch.max(torch.softmax(y_pred,dim=-1), dim=1)[1]
+        y_pred = torch.max(torch.softmax(y_pred, dim=-1), dim=1)[1]
         y_pred = y_pred.cpu().detach().numpy()
         y_t = y_t.cpu().detach().numpy()
 
-        print(confusion_matrix(y_t,y_pred))
+        print(confusion_matrix(y_t, y_pred))
 
 
-
-
-
-train_full_model()
-
-
-train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-
-
+train_full_model(False, False)

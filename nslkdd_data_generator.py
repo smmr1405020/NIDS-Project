@@ -35,11 +35,11 @@ for k,v in ATTACK_DICT.items():
 
 def load_nslkdd(train_data = True):
 
-    nRowsRead = 4000  # specify 'None' if want to read whole file
+    nRowsRead = None  # specify 'None' if want to read whole file
     df1 = pd.read_csv('./Dataset_NSLKDD/kdd_train.csv', delimiter=',', nrows=nRowsRead)
     df1.dataframeName = 'kdd_train.csv'
 
-    df2 = pd.read_csv('./Dataset_NSLKDD/kdd_test.csv', delimiter=',', nrows=nRowsRead)
+    df2 = pd.read_csv('./Dataset_NSLKDD/kdd_test.csv', delimiter=',')
     df2.dataframeName = 'kdd_test.csv'
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
@@ -173,7 +173,7 @@ class NSLKDD_dataset_test(Dataset):
         return self.x.shape[0]
 
     def __getitem__(self, idx):
-        return torch.from_numpy(np.array(self.x[idx])), torch.LongTensor(self.y[idx]), \
+        return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
                torch.LongTensor([idx]).squeeze()
 
 
@@ -216,9 +216,6 @@ def cluster_acc(y_true, y_pred):
 #     print(x.shape)
 #     print(y)
 #     print(idx.shape)
-
-load_nslkdd(True)
-
 
 '''
 # lists to hold our attack classifications
