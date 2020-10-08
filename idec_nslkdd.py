@@ -5,8 +5,9 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.nn import Linear
+from torch.nn import Dropout
 import args
-from nslkdd_data_generator import NSLKDD_dataset_train , NSLKDD_dataset_test
+from nslkdd_data_generator import get_training_data, NSLKDD_dataset_test
 from sklearn.metrics import confusion_matrix
 
 np.random.seed(12345)
@@ -14,12 +15,9 @@ torch.manual_seed(12345)
 import random
 
 random.seed(12345)
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-dataset = NSLKDD_dataset_train()
-
-n_clusters = dataset.get_input_size()
-n_input = dataset.get_input_size()
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
+n_input = total_dataset.get_input_size()
 
 
 class AE(nn.Module):
@@ -64,34 +62,59 @@ def pretrain_ae(model):
     pretrain autoencoder
     '''
 
-    train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    optimizer = Adam(model.parameters(), lr=args.lr_ae)
+    training_data_length = int(0.8 * total_dataset.__len__())
+    validation_data_length = total_dataset.__len__() - training_data_length
 
-    min_train_loss = 1000000
+    training_data, validation_data = torch.utils.data.random_split(total_dataset,
+                                                                   [training_data_length, validation_data_length])
 
-    for epoch in range(600):
-        total_loss = 0.
-        batch_num = 0
+    train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr_ae)
 
-        for batch_idx, (x, y, idx) in enumerate(train_loader):
+    validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
+
+    min_val_loss = 1000000
+
+    for epoch in range(400):
+        training_loss = 0.
+        validation_loss = 0.
+        train_batch_num = 0
+        val_batch_num = 0
+
+        model.train()
+        for batch_idx, (x, _, idx) in enumerate(train_loader):
             x = x.float()
             x = x.to(device)
-            batch_num = batch_idx
+            train_batch_num = batch_idx
 
             optimizer.zero_grad()
             x_bar, z = model(x)
             loss = F.mse_loss(x_bar, x)
-            total_loss += loss.item()
+            training_loss += loss.item()
 
             loss.backward()
             optimizer.step()
 
-        if epoch % 1 == 0:
-            print("epoch {} loss={:.4f}".format(epoch,
-                                                total_loss / (batch_num + 1)))
+        training_loss /= (train_batch_num + 1)
 
-        if epoch == 0 or min_train_loss > total_loss:
-            min_train_loss = total_loss
+        model.eval()
+        for batch_idx, (x, _, idx) in enumerate(validation_loader):
+            x = x.float()
+            x = x.to(device)
+            val_batch_num = batch_idx
+
+            x_bar, z = model(x)
+            loss = F.mse_loss(x_bar, x)
+            validation_loss += loss.item()
+
+        validation_loss /= (val_batch_num + 1)
+
+        if epoch % 1 == 0:
+            print(
+                "epoch {} , Training loss={:.4f}, Validation loss={:.4f}".format(epoch, training_loss, validation_loss))
+
+        if epoch == 0 or min_val_loss > validation_loss:
+            min_val_loss = validation_loss
             torch.save(model.state_dict(), args.reconstruction_based_ae_pretrain_path)
 
     print("model saved to {}.".format(args.reconstruction_based_ae_pretrain_path))
@@ -117,65 +140,152 @@ def train_autoencoder(load_pretrained_ae=False):
         st_dict = torch.load(args.reconstruction_based_ae_pretrain_path)
         model.load_state_dict(st_dict)
 
-    train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-    optimizer = Adam(model.parameters(), lr=args.lr)
+    training_data_length = int(0.8 * labeled_dataset.__len__())
+    validation_data_length = labeled_dataset.__len__() - training_data_length
 
+    training_data, validation_data = torch.utils.data.random_split(labeled_dataset,
+                                                                   [training_data_length, validation_data_length])
+
+    train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
+    optimizer = Adam(model.parameters(), lr=0.0001)
+
+    validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
+
+    x_batch = []
+    y_batch = []
     adj_mat_batch = []
+    adj_mat_mask_batch = []
 
-    for batch_idx, (x, y_t, idx) in enumerate(train_loader):
+    for batch_idx, (x, y_t, _) in enumerate(train_loader):
 
         x = x.float()
         x = x.to(device)
+        x_batch.append(x)
+
+        y_batch.append(y_t)
 
         adj_mat = torch.zeros((x.shape[0], x.shape[0])).to(device)
+        adj_mat_mask = torch.zeros((x.shape[0], x.shape[0])).to(device)
+
         for i in range(len(adj_mat)):
             for j in range(len(adj_mat[i])):
-                if y_t[i] == y_t[j]:
+                if y_t[i] == -1 or y_t[j] == -1:
+                    adj_mat[i][j] = 0
+                    adj_mat_mask[i][j] = 0
+                elif y_t[i] == y_t[j]:
                     adj_mat[i][j] = 1
+                    adj_mat_mask[i][j] = 1
                 else:
                     adj_mat[i][j] = 0
+                    adj_mat_mask[i][j] = 1
 
         adj_mat_batch.append(adj_mat)
+        adj_mat_mask_batch.append(adj_mat_mask)
 
-    min_total_loss = 100000
+    x_batch_val = []
+    y_batch_val = []
+    adj_mat_batch_val = []
+    adj_mat_mask_batch_val = []
 
-    model.train()
-    for epoch in range(400):
-        total_loss = 0.0
-        total_loss_r = 0.0
-        total_loss_c = 0.0
+    for batch_idx, (x, y_t, _) in enumerate(validation_loader):
 
-        for batch_idx, (x, y_t, idx) in enumerate(train_loader):
+        x = x.float()
+        x = x.to(device)
+        x_batch_val.append(x)
+
+        y_batch_val.append(y_t)
+
+        adj_mat_val = torch.zeros((x.shape[0], x.shape[0])).to(device)
+        adj_mat_mask_val = torch.zeros((x.shape[0], x.shape[0])).to(device)
+
+        for i in range(len(adj_mat_val)):
+            for j in range(len(adj_mat_val[i])):
+                if y_t[i] == -1 or y_t[j] == -1:
+                    adj_mat_val[i][j] = 0
+                    adj_mat_mask_val[i][j] = 0
+                elif y_t[i] == y_t[j]:
+                    adj_mat_val[i][j] = 1
+                    adj_mat_mask_val[i][j] = 1
+                else:
+                    adj_mat_val[i][j] = 0
+                    adj_mat_mask_val[i][j] = 1
+
+        adj_mat_batch_val.append(adj_mat_val)
+        adj_mat_mask_batch_val.append(adj_mat_mask_val)
+
+    min_val_loss = 100000
+
+    for epoch in range(200):
+
+        train_loss = 0.0
+        train_loss_r = 0.0
+        train_loss_c = 0.0
+
+        validation_loss = 0.0
+        validation_loss_r = 0.0
+        validation_loss_c = 0.0
+
+        model.train()
+        for batch_idx, (x, y_t) in enumerate(zip(x_batch, y_batch)):
+            optimizer.zero_grad()
             x = x.float()
             x = x.to(device)
 
             adj_mat = adj_mat_batch[batch_idx]
+            adj_mat_mask = adj_mat_mask_batch[batch_idx]
 
-            x_bar, z = model(x)  # 32 * 16 16 * 32 = 32 * 32
+            x_bar, z = model(x)
 
-            adj_cap = torch.matmul(z, z.T).to(device)
+            z_n = z/torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True))
+            adj_cap = torch.matmul(z_n, z_n.T).to(device)
+
+            adj_mat = adj_mat * adj_mat_mask
+            adj_cap = adj_cap * adj_mat_mask
 
             reconstr_loss = F.mse_loss(x_bar, x)
-            cl_loss = (1.0 / (len(adj_mat) * len(adj_mat))) * F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
+            cl_loss = F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
 
-            loss = reconstr_loss + 0.05 * cl_loss
+            loss = reconstr_loss + 0.5 * cl_loss
 
-            total_loss += loss.item()
-            total_loss_r += reconstr_loss.item()
-            total_loss_c += 0.05 * cl_loss.item()
+            train_loss += loss.item()
+            train_loss_r += reconstr_loss.item()
+            train_loss_c += 0.5 * cl_loss.item()
 
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        if epoch % 1 == 0:
-            print("epoch {} : Total loss: {:.3f} , Reconstruction Loss: {:.3f} , Cluster Loss: {:.3f}".format(epoch,
-                                                                                                              total_loss,
-                                                                                                              total_loss_r,
-                                                                                                              total_loss_c))
+        model.eval()
+        for batch_idx, (x, y_t) in enumerate(zip(x_batch_val, y_batch_val)):
+            x = x.float()
+            x = x.to(device)
 
-        if epoch == 0 or min_total_loss > total_loss:
-            min_total_loss = total_loss
+            adj_mat = adj_mat_batch_val[batch_idx]
+            adj_mat_mask = adj_mat_mask_batch_val[batch_idx]
+
+            x_bar, z = model(x)
+
+            z_n = z / torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True))
+            adj_cap = torch.matmul(z_n, z_n.T).to(device)
+
+            adj_mat = adj_mat * adj_mat_mask
+            adj_cap = adj_cap * adj_mat_mask
+
+            reconstr_loss = F.mse_loss(x_bar, x)
+            cl_loss = F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
+
+            loss = reconstr_loss + 0.5 * cl_loss
+
+            validation_loss += loss.item()
+            validation_loss_r += reconstr_loss.item()
+            validation_loss_c += 0.5 * cl_loss.item()
+
+        if epoch % 1 == 0:
+            print("epoch {} : Training Loss: {:.3f},{:.3f},{:.3f} ; Validation Loss:  {:.3f},{:.3f},{:.3f}".
+                  format(epoch, train_loss_r, train_loss_c, train_loss, validation_loss_r, validation_loss_c,
+                         validation_loss))
+
+        if epoch == 0 or min_val_loss > validation_loss:
+            min_val_loss = validation_loss
             torch.save(model.state_dict(), args.trained_final_ae_path)
 
     print("model saved to {}.".format(args.trained_final_ae_path))
@@ -191,17 +301,16 @@ class NIDS_PREDICTOR(nn.Module):
     def __init__(self, ae_model, reconstruction_model):
         super(NIDS_PREDICTOR, self).__init__()
 
-        self.fc1 = nn.Linear(args.n_z+1, 8)
+        self.fc1 = nn.Linear(args.n_z + 1, 8)
         self.fc2 = nn.Linear(8, 5)
         self.ae = ae_model
         self.rec = reconstruction_model
 
     def forward(self, x):
-
         _, z = self.ae(x)
         x_bar, _ = self.rec(x)
 
-        rec_loss = torch.sqrt(torch.sum((x - x_bar)**2, dim=1, keepdim=True))
+        rec_loss = torch.sqrt(torch.sum((x - x_bar) ** 2, dim=1, keepdim=True))
 
         z_c = torch.cat([z, rec_loss], dim=-1)
 
@@ -211,10 +320,9 @@ class NIDS_PREDICTOR(nn.Module):
         return out_2
 
 
-def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
+def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring=False):
     if not load_trained_ae:
         ae_model = train_autoencoder(load_pretrained_ae)
-        ae_model.requires_grad_(False)
     else:
         ae_model = AE(
             n_enc_1=84,
@@ -225,10 +333,26 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
             n_dec_3=84,
             n_input=n_input,
             n_z=args.n_z).to(device)
-        ae_model.load_state_dict(torch.load(args.trained_final_ae_path))
+        ae_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
 
+    #ae_model.requires_grad_(False)
 
     rec_model = AE(
+        n_enc_1=84,
+        n_enc_2=63,
+        n_enc_3=21,
+        n_dec_1=21,
+        n_dec_2=63,
+        n_dec_3=84,
+        n_input=n_input,
+        n_z=args.n_z).to(device)
+
+    rec_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
+
+    #rec_model.requires_grad_(False)
+
+    if not_caring == True:
+        ae_model = AE(
             n_enc_1=84,
             n_enc_2=63,
             n_enc_3=21,
@@ -238,59 +362,105 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
             n_input=n_input,
             n_z=args.n_z).to(device)
 
-    rec_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
+        rec_model = AE(
+            n_enc_1=84,
+            n_enc_2=63,
+            n_enc_3=21,
+            n_dec_1=21,
+            n_dec_2=63,
+            n_dec_3=84,
+            n_input=n_input,
+            n_z=args.n_z).to(device)
 
-    main_model = NIDS_PREDICTOR(ae_model=ae_model,reconstruction_model=rec_model).to(device)
+    main_model = NIDS_PREDICTOR(ae_model=ae_model, reconstruction_model=rec_model).to(device)
 
-    train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    optimizer = Adam(main_model.parameters(), lr=0.001)
+    training_data_length = int(0.8 * labeled_dataset.__len__())
+    validation_data_length = labeled_dataset.__len__() - training_data_length
 
-    weights = dataset.get_weight()
+    training_data, validation_data = torch.utils.data.random_split(labeled_dataset,
+                                                                   [training_data_length, validation_data_length])
+
+    train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
+    validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
+
+    optimizer = Adam([{'params': main_model.rec.parameters(), 'lr': 0.002},
+                      {'params': main_model.ae.parameters(), 'lr': 0.002},
+                      {'params': main_model.fc1.parameters()},
+                      {'params': main_model.fc2.parameters()}], lr=0.002)
+
+    # optimizer = Adam(main_model.parameters(), lr=0.001)
+    weights = labeled_dataset.get_weight()
     weights = torch.FloatTensor(weights).to(device)
 
-    min_total_loss = 100000
+    min_validation_loss = 100000
+    max_val_acc = -1
 
-    for epoch in range(600):
-        total_loss = 0.0
-        batch_num = 0
+    for epoch in range(400):
+        train_loss = 0.0
+        train_batch_num = 0
+        train_num_correct = 0
+        train_num_examples = 0
 
-        num_correct = 0
-        num_examples = 0
+        val_loss = 0.0
+        val_batch_num = 0
+        val_num_correct = 0
+        val_num_examples = 0
 
+        main_model.train()
         for batch_idx, (x, y_t, idx) in enumerate(train_loader):
             x = x.float()
             x = x.to(device)
-            batch_num = batch_idx
+            train_batch_num = batch_idx
 
             optimizer.zero_grad()
 
             y_pred = main_model(x)
-
-
             y_t = y_t.to(device)
 
             loss = torch.nn.CrossEntropyLoss(weight=weights)(y_pred, y_t)
-            total_loss += loss.item()
+            train_loss += loss.item()
 
             loss.backward()
             optimizer.step()
 
             correct = torch.eq(torch.max(torch.softmax(y_pred, dim=-1), dim=1)[1], y_t).view(-1)
-            num_correct += torch.sum(correct).item()
-            num_examples += correct.shape[0]
+            train_num_correct += torch.sum(correct).item()
+            train_num_examples += correct.shape[0]
+
+        train_loss /= (train_batch_num + 1)
+
+        main_model.eval()
+        for batch_idx, (x, y_t, idx) in enumerate(validation_loader):
+            x = x.float()
+            x = x.to(device)
+            val_batch_num = batch_idx
+
+            y_pred = main_model(x)
+            y_t = y_t.to(device)
+            loss = torch.nn.CrossEntropyLoss(weight=weights)(y_pred, y_t)
+            val_loss += loss.item()
+
+            correct = torch.eq(torch.max(torch.softmax(y_pred, dim=-1), dim=1)[1], y_t).view(-1)
+            val_num_correct += torch.sum(correct).item()
+            val_num_examples += correct.shape[0]
+
+        val_loss /= (val_batch_num + 1)
+        val_acc = val_num_correct / val_num_examples
 
         if epoch % 1 == 0:
-            print("epoch {} loss={:.4f} Accuracy={:.5f}".format(epoch,
-                                                                total_loss / (batch_num + 1),
-                                                                num_correct / num_examples))
+            print("epoch {}; T loss={:.4f} T Accuracy={:.4f}; V loss={:.4f} V Accuracy={:.4f}".
+                  format(epoch, train_loss, train_num_correct / train_num_examples, val_loss,
+                         val_num_correct / val_num_examples))
 
-        if epoch == 0 or min_total_loss > total_loss:
-            min_total_loss = total_loss
+        if epoch == 0 or min_validation_loss > val_loss:
+            min_validation_loss = val_loss
             torch.save(main_model.state_dict(), args.final_model_path)
 
     print("model saved to {}.".format(args.final_model_path))
 
-    test_loader = DataLoader(NSLKDD_dataset_test(), batch_size=22544, shuffle=True)
+    main_model.load_state_dict(torch.load(args.final_model_path))
+
+    test_loader = DataLoader(NSLKDD_dataset_test(), batch_size=22544, shuffle=False)
     for batch_idx, (x, y_t, idx) in enumerate(test_loader):
         x = x.float()
         x = x.to(device)
@@ -305,4 +475,4 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
         print(confusion_matrix(y_t, y_pred))
 
 
-train_full_model(True, True)
+train_full_model(False, False, False)
