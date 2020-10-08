@@ -35,11 +35,11 @@ for k,v in ATTACK_DICT.items():
 
 def load_nslkdd(train_data = True):
 
-    nRowsRead = None  # specify 'None' if want to read whole file
+    nRowsRead = 5000  # specify 'None' if want to read whole file
     df1 = pd.read_csv('./Dataset_NSLKDD/kdd_train.csv', delimiter=',', nrows=nRowsRead)
     df1.dataframeName = 'kdd_train.csv'
 
-    df2 = pd.read_csv('./Dataset_NSLKDD/kdd_test.csv', delimiter=',')
+    df2 = pd.read_csv('./Dataset_NSLKDD/kdd_test.csv', delimiter=',', nrows=nRowsRead)
     df2.dataframeName = 'kdd_test.csv'
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
@@ -108,7 +108,7 @@ def load_nslkdd(train_data = True):
 
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
 
-    weights = [min(5.0,max(trYcounts)/trYcounts[i]) for i in range(len(trYcounts))]
+    weights = [max(trYcounts)/trYcounts[i] for i in range(len(trYcounts))]
     weights = np.array(weights)
 
     test_X = df2.values[:, :-1]

@@ -69,7 +69,7 @@ def pretrain_ae(model):
 
     min_train_loss = 1000000
 
-    for epoch in range(5):
+    for epoch in range(600):
         total_loss = 0.
         batch_num = 0
 
@@ -140,7 +140,7 @@ def train_autoencoder(load_pretrained_ae=False):
     min_total_loss = 100000
 
     model.train()
-    for epoch in range(5):
+    for epoch in range(400):
         total_loss = 0.0
         total_loss_r = 0.0
         total_loss_c = 0.0
@@ -151,7 +151,7 @@ def train_autoencoder(load_pretrained_ae=False):
 
             adj_mat = adj_mat_batch[batch_idx]
 
-            x_bar, z = model(x)
+            x_bar, z = model(x)  # 32 * 16 16 * 32 = 32 * 32
 
             adj_cap = torch.matmul(z, z.T).to(device)
 
@@ -214,7 +214,7 @@ class NIDS_PREDICTOR(nn.Module):
 def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
     if not load_trained_ae:
         ae_model = train_autoencoder(load_pretrained_ae)
-        # ae_model.requires_grad_(False)
+        ae_model.requires_grad_(False)
     else:
         ae_model = AE(
             n_enc_1=84,
@@ -250,7 +250,7 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
 
     min_total_loss = 100000
 
-    for epoch in range(5):
+    for epoch in range(600):
         total_loss = 0.0
         batch_num = 0
 
@@ -305,4 +305,4 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False):
         print(confusion_matrix(y_t, y_pred))
 
 
-train_full_model(False, False)
+train_full_model(True, True)
