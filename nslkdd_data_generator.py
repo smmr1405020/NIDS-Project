@@ -45,6 +45,8 @@ def load_nslkdd(train_data=True):
 
     df1.sample(frac=1)
 
+    print(df1.columns)
+
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
     obj_cols = list(obj_cols)
 
@@ -237,3 +239,6 @@ def cluster_acc(y_true, y_pred):
         y = ind[1][i]
         sm += w[x, y]
     return sm * 1.0 / y_pred.size
+
+
+load_nslkdd(True)

@@ -245,11 +245,11 @@ def train_autoencoder(load_pretrained_ae=False):
             reconstr_loss = F.mse_loss(x_bar, x)
             cl_loss = F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
 
-            loss = reconstr_loss + 0.5 * cl_loss
+            loss = reconstr_loss + 0.1 * cl_loss
 
             train_loss += loss.item()
             train_loss_r += reconstr_loss.item()
-            train_loss_c += 0.5 * cl_loss.item()
+            train_loss_c += 0.1 * cl_loss.item()
 
             loss.backward()
             optimizer.step()
@@ -273,11 +273,11 @@ def train_autoencoder(load_pretrained_ae=False):
             reconstr_loss = F.mse_loss(x_bar, x)
             cl_loss = F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
 
-            loss = reconstr_loss + 0.5 * cl_loss
+            loss = reconstr_loss + 0.1 * cl_loss
 
             validation_loss += loss.item()
             validation_loss_r += reconstr_loss.item()
-            validation_loss_c += 0.5 * cl_loss.item()
+            validation_loss_c += 0.1 * cl_loss.item()
 
         if epoch % 1 == 0:
             print("epoch {} : Training Loss: {:.3f},{:.3f},{:.3f} ; Validation Loss:  {:.3f},{:.3f},{:.3f}".
@@ -383,10 +383,10 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
     train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
     validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
 
-    optimizer = Adam([{'params': main_model.rec.parameters(), 'lr': 0.002},
-                      {'params': main_model.ae.parameters(), 'lr': 0.002},
+    optimizer = Adam([{'params': main_model.rec.parameters(), 'lr': 0.001},
+                      {'params': main_model.ae.parameters(), 'lr': 0.001},
                       {'params': main_model.fc1.parameters()},
-                      {'params': main_model.fc2.parameters()}], lr=0.002)
+                      {'params': main_model.fc2.parameters()}], lr=0.001)
 
     # optimizer = Adam(main_model.parameters(), lr=0.001)
     weights = labeled_dataset.get_weight()
