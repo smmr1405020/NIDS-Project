@@ -29,6 +29,17 @@ ATTACK_DICT = {
     'Normal': ['normal']
 }
 
+col_names = ["duration","protocol_type","service","flag","src_bytes",
+    "dst_bytes","land","wrong_fragment","urgent","hot","num_failed_logins",
+    "logged_in","num_compromised","root_shell","su_attempted","num_root",
+    "num_file_creations","num_shells","num_access_files","num_outbound_cmds",
+    "is_host_login","is_guest_login","count","srv_count","serror_rate",
+    "srv_serror_rate","rerror_rate","srv_rerror_rate","same_srv_rate",
+    "diff_srv_rate","srv_diff_host_rate","dst_host_count","dst_host_srv_count",
+    "dst_host_same_srv_rate","dst_host_diff_srv_rate","dst_host_same_src_port_rate",
+    "dst_host_srv_diff_host_rate","dst_host_serror_rate","dst_host_srv_serror_rate",
+    "dst_host_rerror_rate","dst_host_srv_rerror_rate","label","difficulty_level"]
+
 ATTACK_MAP = dict()
 for k, v in ATTACK_DICT.items():
     for att in v:
@@ -36,16 +47,19 @@ for k, v in ATTACK_DICT.items():
 
 
 def load_nslkdd(train_data=True):
-    nRowsRead = 5000  # specify 'None' if want to read whole file
-    df1 = pd.read_csv('./Dataset_NSLKDD/kdd_train.csv', delimiter=',', nrows=nRowsRead)
-    df1.dataframeName = 'kdd_train.csv'
 
-    df2 = pd.read_csv('./Dataset_NSLKDD/kdd_test.csv', delimiter=',')
-    df2.dataframeName = 'kdd_test.csv'
+    nRowsRead = 5000  # specify 'None' if want to read whole file
+
+    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names, nrows=nRowsRead)
+    df1.dataframeName = 'KDDTrain+.txt'
+
+    df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
+    df2.dataframeName = 'KDDTest+.txt'
+
+    df1.drop(['difficulty_level'],axis=1, inplace=True)
+    df2.drop(['difficulty_level'],axis=1, inplace=True)
 
     df1.sample(frac=1)
-
-    print(df1.columns)
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
     obj_cols = list(obj_cols)
@@ -54,7 +68,7 @@ def load_nslkdd(train_data=True):
 
     for col in obj_cols:
 
-        if col != 'labels':
+        if col != 'label':
             onehot_cols_train = pd.get_dummies(df1[col], prefix=col, dtype='float64')
             onehot_cols_test = pd.get_dummies(df2[col], prefix=col, dtype='float64')
 

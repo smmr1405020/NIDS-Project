@@ -16,7 +16,7 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.1)
 n_input = total_dataset.get_input_size()
 
 
@@ -75,7 +75,7 @@ def pretrain_ae(model):
 
     min_val_loss = 1000000
 
-    for epoch in range(400):
+    for epoch in range(10):
         training_loss = 0.
         validation_loss = 0.
         train_batch_num = 0
@@ -215,7 +215,7 @@ def train_autoencoder(load_pretrained_ae=False):
 
     min_val_loss = 100000
 
-    for epoch in range(200):
+    for epoch in range(10):
 
         train_loss = 0.0
         train_loss_r = 0.0
@@ -395,7 +395,7 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
     min_validation_loss = 100000
     max_val_acc = -1
 
-    for epoch in range(400):
+    for epoch in range(10):
         train_loss = 0.0
         train_batch_num = 0
         train_num_correct = 0
