@@ -1,5 +1,5 @@
 batch_size = 32
-lr_ae = 0.002
+lr_ae = 0.0008
 lr = 0.0001
 n_z = 16
 gamma = 0.1

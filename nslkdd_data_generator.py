@@ -48,7 +48,7 @@ for k, v in ATTACK_DICT.items():
 
 def load_nslkdd(train_data=True):
 
-    nRowsRead = None  # specify 'None' if want to read whole file
+    nRowsRead = 5000  # specify 'None' if want to read whole file
 
     df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names, nrows=nRowsRead)
     df1.dataframeName = 'KDDTrain+.txt'
@@ -118,11 +118,17 @@ def load_nslkdd(train_data=True):
 
     # df1 = df1[df1.labels != cat_dict['Normal']]
 
+    normal_label = cat_dict['Normal']
+    train_normal_df = df1.loc[df1['label'] == normal_label]
+
+
     train_X = df1.values[:, :-1]
+    train_normal = train_normal_df.values[:,:-1]
     train_Y = df1.values[:, -1]
 
-    train_Y = np.array(train_Y).astype(np.int64)
 
+
+    train_Y = np.array(train_Y).astype(np.int64)
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
 
     weights = [max(trYcounts) / trYcounts[i] for i in range(len(trYcounts))]
@@ -137,16 +143,18 @@ def load_nslkdd(train_data=True):
     scaler.fit(train_X)
 
     train_X = scaler.transform(train_X)
+    train_normal = scaler.transform(train_normal)
     test_X = scaler.transform(test_X)
 
+
     if train_data:
-        return train_X, train_Y, weights
+        return train_X, train_Y, weights, train_normal
     else:
         return test_X, test_Y
 
 
 def get_training_data(label_ratio):
-    train_X, train_Y, weights = load_nslkdd(True)
+    train_X, train_Y, weights, train_normal = load_nslkdd(True)
     no_labeled_data = int(label_ratio * len(train_X))
 
     train_Y[no_labeled_data:] = -1
@@ -207,11 +215,28 @@ def get_training_data(label_ratio):
             return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
                    torch.LongTensor([idx]).squeeze()
 
+    class NSLKDD_dataset_train_normal(Dataset):
+
+        def __init__(self):
+            self.x = train_normal
+            self.y = np.ones((train_normal.shape[0])) * 2
+
+        def __len__(self):
+            return self.x.shape[0]
+
+        def __getitem__(self, idx):
+            return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
+                   torch.LongTensor([idx]).squeeze()
+
+        def get_input_size(self):
+            return self.x.shape[1]
+
     total_dataset = NSLKDD_dataset_train()
     labeled_dataset = NSLKDD_dataset_train_labeled()
     unlabeled_dataset = NSLKDD_dataset_train_unlabeled()
+    normal_dataset = NSLKDD_dataset_train_normal()
 
-    return total_dataset, labeled_dataset, unlabeled_dataset
+    return total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset
 
 
 class NSLKDD_dataset_test(Dataset):
@@ -253,6 +278,3 @@ def cluster_acc(y_true, y_pred):
         y = ind[1][i]
         sm += w[x, y]
     return sm * 1.0 / y_pred.size
-
-
-load_nslkdd(True)

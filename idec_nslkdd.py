@@ -16,7 +16,7 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.1)
+total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
 n_input = total_dataset.get_input_size()
 
 
@@ -62,10 +62,10 @@ def pretrain_ae(model):
     pretrain autoencoder
     '''
 
-    training_data_length = int(0.8 * total_dataset.__len__())
-    validation_data_length = total_dataset.__len__() - training_data_length
+    training_data_length = int(0.8 * normal_dataset.__len__())
+    validation_data_length = normal_dataset.__len__() - training_data_length
 
-    training_data, validation_data = torch.utils.data.random_split(total_dataset,
+    training_data, validation_data = torch.utils.data.random_split(normal_dataset,
                                                                    [training_data_length, validation_data_length])
 
     train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
