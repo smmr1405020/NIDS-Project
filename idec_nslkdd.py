@@ -75,7 +75,7 @@ def pretrain_ae(model):
 
     min_val_loss = 1000000
 
-    for epoch in range(500):
+    for epoch in range(10):
         training_loss = 0.
         validation_loss = 0.
         train_batch_num = 0
@@ -215,7 +215,7 @@ def train_autoencoder(load_pretrained_ae=False):
 
     min_val_loss = 100000
 
-    for epoch in range(400):
+    for epoch in range(10):
 
         train_loss = 0.0
         train_loss_r = 0.0
@@ -302,7 +302,7 @@ class NIDS_PREDICTOR(nn.Module):
         super(NIDS_PREDICTOR, self).__init__()
 
         self.fc1 = nn.Linear(args.n_z + 1, 8)
-        self.fc2 = nn.Linear(8, 5)
+        self.fc2 = nn.Linear(8, 2)
         self.ae = ae_model
         self.rec = reconstruction_model
 
@@ -396,7 +396,7 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
     min_validation_loss = 100000
     max_val_acc = -1
 
-    for epoch in range(350):
+    for epoch in range(10):
         train_loss = 0.0
         train_batch_num = 0
         train_num_correct = 0

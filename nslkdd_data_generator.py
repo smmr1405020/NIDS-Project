@@ -29,16 +29,16 @@ ATTACK_DICT = {
     'Normal': ['normal']
 }
 
-col_names = ["duration","protocol_type","service","flag","src_bytes",
-    "dst_bytes","land","wrong_fragment","urgent","hot","num_failed_logins",
-    "logged_in","num_compromised","root_shell","su_attempted","num_root",
-    "num_file_creations","num_shells","num_access_files","num_outbound_cmds",
-    "is_host_login","is_guest_login","count","srv_count","serror_rate",
-    "srv_serror_rate","rerror_rate","srv_rerror_rate","same_srv_rate",
-    "diff_srv_rate","srv_diff_host_rate","dst_host_count","dst_host_srv_count",
-    "dst_host_same_srv_rate","dst_host_diff_srv_rate","dst_host_same_src_port_rate",
-    "dst_host_srv_diff_host_rate","dst_host_serror_rate","dst_host_srv_serror_rate",
-    "dst_host_rerror_rate","dst_host_srv_rerror_rate","label","difficulty_level"]
+col_names = ["duration", "protocol_type", "service", "flag", "src_bytes",
+             "dst_bytes", "land", "wrong_fragment", "urgent", "hot", "num_failed_logins",
+             "logged_in", "num_compromised", "root_shell", "su_attempted", "num_root",
+             "num_file_creations", "num_shells", "num_access_files", "num_outbound_cmds",
+             "is_host_login", "is_guest_login", "count", "srv_count", "serror_rate",
+             "srv_serror_rate", "rerror_rate", "srv_rerror_rate", "same_srv_rate",
+             "diff_srv_rate", "srv_diff_host_rate", "dst_host_count", "dst_host_srv_count",
+             "dst_host_same_srv_rate", "dst_host_diff_srv_rate", "dst_host_same_src_port_rate",
+             "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
+             "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "label", "difficulty_level"]
 
 ATTACK_MAP = dict()
 for k, v in ATTACK_DICT.items():
@@ -47,7 +47,6 @@ for k, v in ATTACK_DICT.items():
 
 
 def load_nslkdd(train_data=True):
-
     nRowsRead = None  # specify 'None' if want to read whole file
 
     df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names, nrows=nRowsRead)
@@ -56,8 +55,8 @@ def load_nslkdd(train_data=True):
     df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
     df2.dataframeName = 'KDDTest+.txt'
 
-    df1.drop(['difficulty_level'],axis=1, inplace=True)
-    df2.drop(['difficulty_level'],axis=1, inplace=True)
+    df1.drop(['difficulty_level'], axis=1, inplace=True)
+    df2.drop(['difficulty_level'], axis=1, inplace=True)
 
     df1.sample(frac=1)
 
@@ -119,14 +118,15 @@ def load_nslkdd(train_data=True):
     # df1 = df1[df1.labels != cat_dict['Normal']]
 
     normal_label = cat_dict['Normal']
+
     train_normal_df = df1.loc[df1['label'] == normal_label]
 
-
     train_X = df1.values[:, :-1]
-    train_normal = train_normal_df.values[:,:-1]
+    train_normal = train_normal_df.values[:, :-1]
     train_Y = df1.values[:, -1]
 
-
+    train_Y_binary = train_Y == normal_label
+    train_Y = np.array(train_Y_binary).astype(np.int64)
 
     train_Y = np.array(train_Y).astype(np.int64)
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
@@ -137,6 +137,9 @@ def load_nslkdd(train_data=True):
     test_X = df2.values[:, :-1]
     test_Y = df2.values[:, -1]
 
+    test_Y_binary = test_Y == normal_label
+    test_Y = np.array(test_Y_binary).astype(np.int64)
+
     test_Y = np.array(test_Y).astype(np.int64)
 
     scaler = StandardScaler()
@@ -145,7 +148,6 @@ def load_nslkdd(train_data=True):
     train_X = scaler.transform(train_X)
     train_normal = scaler.transform(train_normal)
     test_X = scaler.transform(test_X)
-
 
     if train_data:
         return train_X, train_Y, weights, train_normal
@@ -188,6 +190,7 @@ def get_training_data(label_ratio):
 
         def get_weight(self):
             return self.w
+
     class NSLKDD_dataset_train_labeled(NSLKDD_dataset_train):
 
         def __init__(self):
@@ -201,6 +204,7 @@ def get_training_data(label_ratio):
         def __getitem__(self, idx):
             return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
                    torch.LongTensor([idx]).squeeze()
+
     class NSLKDD_dataset_train_unlabeled(NSLKDD_dataset_train):
 
         def __init__(self):
