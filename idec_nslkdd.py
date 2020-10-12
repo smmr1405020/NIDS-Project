@@ -75,7 +75,7 @@ def pretrain_ae(model):
 
     min_val_loss = 1000000
 
-    for epoch in range(10):
+    for epoch in range(500):
         training_loss = 0.
         validation_loss = 0.
         train_batch_num = 0
@@ -215,7 +215,7 @@ def train_autoencoder(load_pretrained_ae=False):
 
     min_val_loss = 100000
 
-    for epoch in range(10):
+    for epoch in range(400):
 
         train_loss = 0.0
         train_loss_r = 0.0
@@ -321,6 +321,7 @@ class NIDS_PREDICTOR(nn.Module):
 
 
 def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring=False):
+
     if not load_trained_ae:
         ae_model = train_autoencoder(load_pretrained_ae)
     else:
@@ -395,7 +396,7 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
     min_validation_loss = 100000
     max_val_acc = -1
 
-    for epoch in range(10):
+    for epoch in range(350):
         train_loss = 0.0
         train_batch_num = 0
         train_num_correct = 0
