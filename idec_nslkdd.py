@@ -350,7 +350,7 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
 
     rec_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
 
-    #rec_model.requires_grad_(False)
+    rec_model.requires_grad_(False)
 
     if not_caring == True:
         ae_model = AE(
@@ -384,7 +384,7 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
     train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
     validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
 
-    optimizer = Adam([{'params': main_model.rec.parameters(), 'lr': 0.001},
+    optimizer = Adam([
                       {'params': main_model.ae.parameters(), 'lr': 0.001},
                       {'params': main_model.fc1.parameters()},
                       {'params': main_model.fc2.parameters()}], lr=0.001)
