@@ -5,10 +5,11 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.nn import Linear
-from torch.nn import Dropout
 import args
 from nslkdd_data_generator import get_training_data, NSLKDD_dataset_test
 from sklearn.metrics import confusion_matrix
+from sklearn.cluster import OPTICS
+from sklearn.cluster import KMeans
 
 np.random.seed(12345)
 torch.manual_seed(12345)
@@ -17,7 +18,113 @@ import random
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
-n_input = total_dataset.get_input_size()
+test_dataset = NSLKDD_dataset_test()
+n_input = total_dataset.get_input_size() + 1
+
+ae_pretrain_epochs = 10
+train_dnn_epochs = 10
+
+
+def add_cluster_label():
+    data_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
+    clustering = OPTICS(min_samples=10)
+
+    clusters = dict()
+    firsttime = 1
+    cluster_centers = None
+
+    for batch_idx, (x, y, w) in enumerate(data_loader):
+        num_data = x.cpu().detach().numpy()
+        print("Clustering Started.")
+        clustering.fit(num_data)
+        print("Clustering ended.")
+        cluster_assignment = clustering.labels_
+
+        for i in range(len(cluster_assignment)):
+            clusters.setdefault(cluster_assignment[i], []).append(num_data[i])
+
+        for k, v in clusters.items():
+            if k != -1:
+                cluster = np.array(v)
+                kmeans_clustering = KMeans(n_clusters=np.max([int(np.round(cluster.shape[0] / 20)), 1]), random_state=0)
+                kmeans_clustering.fit(cluster)
+                if firsttime:
+                    cluster_centers = np.array(kmeans_clustering.cluster_centers_)
+                    firsttime = 0
+                else:
+                    cluster_centers = np.concatenate([cluster_centers, np.array(kmeans_clustering.cluster_centers_)],
+                                                     axis=0)
+
+        break
+
+    print("Total Dataset Distance Calculation")
+    total_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
+    for batch_idx, (x, y, w) in enumerate(total_loader):
+        num_data = x.cpu().detach().numpy()
+        cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
+        cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
+        num_data_exp = np.expand_dims(num_data, axis=1)
+        num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
+        distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
+        new_x = np.concatenate([num_data, distances], axis=1)
+        total_dataset.set_x(new_x)
+        break
+
+    print("Labeled Dataset Distance Calculation")
+    labeled_loader = DataLoader(labeled_dataset, batch_size=labeled_dataset.__len__(), shuffle=False)
+    for batch_idx, (x, y, w) in enumerate(labeled_loader):
+        num_data = x.cpu().detach().numpy()
+        cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
+        cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
+        num_data_exp = np.expand_dims(num_data, axis=1)
+        num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
+        distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
+        new_x = np.concatenate([num_data, distances], axis=1)
+        labeled_dataset.set_x(new_x)
+        break
+
+    print("Unlabeled Dataset Distance Calculation")
+    if unlabeled_dataset.__len__() != 0:
+        unlabeled_loader = DataLoader(unlabeled_dataset, batch_size=unlabeled_dataset.__len__(), shuffle=False)
+        for batch_idx, (x, y, w) in enumerate(unlabeled_loader):
+            num_data = x.cpu().detach().numpy()
+            cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
+            cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
+            num_data_exp = np.expand_dims(num_data, axis=1)
+            num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
+            distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
+            new_x = np.concatenate([num_data, distances], axis=1)
+            unlabeled_dataset.set_x(new_x)
+            break
+
+    print("Normal Dataset Distance Calculation")
+    if normal_dataset.__len__() != 0:
+        normal_loader = DataLoader(normal_dataset, batch_size=normal_dataset.__len__(), shuffle=False)
+        for batch_idx, (x, y, w) in enumerate(normal_loader):
+            num_data = x.cpu().detach().numpy()
+            cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
+            cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
+            num_data_exp = np.expand_dims(num_data, axis=1)
+            num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
+            distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
+            new_x = np.concatenate([num_data, distances], axis=1)
+            normal_dataset.set_x(new_x)
+            break
+
+    print("Test Dataset Distance Calculation")
+    test_loader = DataLoader(test_dataset, batch_size=test_dataset.__len__(), shuffle=False)
+    for batch_idx, (x, y, w) in enumerate(test_loader):
+        num_data = x.cpu().detach().numpy()
+        cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
+        cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
+        num_data_exp = np.expand_dims(num_data, axis=1)
+        num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
+        distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
+        new_x = np.concatenate([num_data, distances], axis=1)
+        test_dataset.set_x(new_x)
+        break
+
+    print("Done.")
 
 
 class AE(nn.Module):
@@ -57,15 +164,15 @@ class AE(nn.Module):
         return x_bar, z
 
 
-def pretrain_ae(model):
+def pretrain_ae(model, data, save_path, epochs):
     '''
     pretrain autoencoder
     '''
 
-    training_data_length = int(0.8 * normal_dataset.__len__())
-    validation_data_length = normal_dataset.__len__() - training_data_length
+    training_data_length = int(0.8 * data.__len__())
+    validation_data_length = data.__len__() - training_data_length
 
-    training_data, validation_data = torch.utils.data.random_split(normal_dataset,
+    training_data, validation_data = torch.utils.data.random_split(data,
                                                                    [training_data_length, validation_data_length])
 
     train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
@@ -75,7 +182,9 @@ def pretrain_ae(model):
 
     min_val_loss = 1000000
 
-    for epoch in range(10):
+    x_dim = data.get_original_feature_size()
+
+    for epoch in range(epochs):
         training_loss = 0.
         validation_loss = 0.
         train_batch_num = 0
@@ -85,6 +194,9 @@ def pretrain_ae(model):
         for batch_idx, (x, _, idx) in enumerate(train_loader):
             x = x.float()
             x = x.to(device)
+
+            x = x[:,:x_dim]
+
             train_batch_num = batch_idx
 
             optimizer.zero_grad()
@@ -101,6 +213,9 @@ def pretrain_ae(model):
         for batch_idx, (x, _, idx) in enumerate(validation_loader):
             x = x.float()
             x = x.to(device)
+
+            x = x[:,:x_dim]
+
             val_batch_num = batch_idx
 
             x_bar, z = model(x)
@@ -115,228 +230,54 @@ def pretrain_ae(model):
 
         if epoch == 0 or min_val_loss > validation_loss:
             min_val_loss = validation_loss
-            torch.save(model.state_dict(), args.reconstruction_based_ae_pretrain_path)
+            torch.save(model.state_dict(), save_path)
 
-    print("model saved to {}.".format(args.reconstruction_based_ae_pretrain_path))
-
-    st_dict = torch.load(args.reconstruction_based_ae_pretrain_path)
-    model.load_state_dict(st_dict)
-
-
-def train_autoencoder(load_pretrained_ae=False):
-    model = AE(
-        n_enc_1=84,
-        n_enc_2=63,
-        n_enc_3=21,
-        n_dec_1=21,
-        n_dec_2=63,
-        n_dec_3=84,
-        n_input=n_input,
-        n_z=args.n_z).to(device)
-
-    if not load_pretrained_ae:
-        pretrain_ae(model)
-    else:
-        st_dict = torch.load(args.reconstruction_based_ae_pretrain_path)
-        model.load_state_dict(st_dict)
-
-    training_data_length = int(0.8 * labeled_dataset.__len__())
-    validation_data_length = labeled_dataset.__len__() - training_data_length
-
-    training_data, validation_data = torch.utils.data.random_split(labeled_dataset,
-                                                                   [training_data_length, validation_data_length])
-
-    train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
-    optimizer = Adam(model.parameters(), lr=0.0001)
-
-    validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
-
-    x_batch = []
-    y_batch = []
-    adj_mat_batch = []
-    adj_mat_mask_batch = []
-
-    for batch_idx, (x, y_t, _) in enumerate(train_loader):
-
-        x = x.float()
-        x = x.to(device)
-        x_batch.append(x)
-
-        y_batch.append(y_t)
-
-        adj_mat = torch.zeros((x.shape[0], x.shape[0])).to(device)
-        adj_mat_mask = torch.zeros((x.shape[0], x.shape[0])).to(device)
-
-        for i in range(len(adj_mat)):
-            for j in range(len(adj_mat[i])):
-                if y_t[i] == -1 or y_t[j] == -1:
-                    adj_mat[i][j] = 0
-                    adj_mat_mask[i][j] = 0
-                elif y_t[i] == y_t[j]:
-                    adj_mat[i][j] = 1
-                    adj_mat_mask[i][j] = 1
-                else:
-                    adj_mat[i][j] = 0
-                    adj_mat_mask[i][j] = 1
-
-        adj_mat_batch.append(adj_mat)
-        adj_mat_mask_batch.append(adj_mat_mask)
-
-    x_batch_val = []
-    y_batch_val = []
-    adj_mat_batch_val = []
-    adj_mat_mask_batch_val = []
-
-    for batch_idx, (x, y_t, _) in enumerate(validation_loader):
-
-        x = x.float()
-        x = x.to(device)
-        x_batch_val.append(x)
-
-        y_batch_val.append(y_t)
-
-        adj_mat_val = torch.zeros((x.shape[0], x.shape[0])).to(device)
-        adj_mat_mask_val = torch.zeros((x.shape[0], x.shape[0])).to(device)
-
-        for i in range(len(adj_mat_val)):
-            for j in range(len(adj_mat_val[i])):
-                if y_t[i] == -1 or y_t[j] == -1:
-                    adj_mat_val[i][j] = 0
-                    adj_mat_mask_val[i][j] = 0
-                elif y_t[i] == y_t[j]:
-                    adj_mat_val[i][j] = 1
-                    adj_mat_mask_val[i][j] = 1
-                else:
-                    adj_mat_val[i][j] = 0
-                    adj_mat_mask_val[i][j] = 1
-
-        adj_mat_batch_val.append(adj_mat_val)
-        adj_mat_mask_batch_val.append(adj_mat_mask_val)
-
-    min_val_loss = 100000
-
-    for epoch in range(10):
-
-        train_loss = 0.0
-        train_loss_r = 0.0
-        train_loss_c = 0.0
-
-        validation_loss = 0.0
-        validation_loss_r = 0.0
-        validation_loss_c = 0.0
-
-        model.train()
-        for batch_idx, (x, y_t) in enumerate(zip(x_batch, y_batch)):
-            optimizer.zero_grad()
-            x = x.float()
-            x = x.to(device)
-
-            adj_mat = adj_mat_batch[batch_idx]
-            adj_mat_mask = adj_mat_mask_batch[batch_idx]
-
-            x_bar, z = model(x)
-
-            z_n = z/torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True))
-            adj_cap = torch.matmul(z_n, z_n.T).to(device)
-
-            adj_mat = adj_mat * adj_mat_mask
-            adj_cap = adj_cap * adj_mat_mask
-
-            reconstr_loss = F.mse_loss(x_bar, x)
-            cl_loss = F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
-
-            loss = reconstr_loss + 0.1 * cl_loss
-
-            train_loss += loss.item()
-            train_loss_r += reconstr_loss.item()
-            train_loss_c += 0.1 * cl_loss.item()
-
-            loss.backward()
-            optimizer.step()
-
-        model.eval()
-        for batch_idx, (x, y_t) in enumerate(zip(x_batch_val, y_batch_val)):
-            x = x.float()
-            x = x.to(device)
-
-            adj_mat = adj_mat_batch_val[batch_idx]
-            adj_mat_mask = adj_mat_mask_batch_val[batch_idx]
-
-            x_bar, z = model(x)
-
-            z_n = z / torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True))
-            adj_cap = torch.matmul(z_n, z_n.T).to(device)
-
-            adj_mat = adj_mat * adj_mat_mask
-            adj_cap = adj_cap * adj_mat_mask
-
-            reconstr_loss = F.mse_loss(x_bar, x)
-            cl_loss = F.mse_loss(adj_mat.view(-1), adj_cap.view(-1))
-
-            loss = reconstr_loss + 0.1 * cl_loss
-
-            validation_loss += loss.item()
-            validation_loss_r += reconstr_loss.item()
-            validation_loss_c += 0.1 * cl_loss.item()
-
-        if epoch % 1 == 0:
-            print("epoch {} : Training Loss: {:.3f},{:.3f},{:.3f} ; Validation Loss:  {:.3f},{:.3f},{:.3f}".
-                  format(epoch, train_loss_r, train_loss_c, train_loss, validation_loss_r, validation_loss_c,
-                         validation_loss))
-
-        if epoch == 0 or min_val_loss > validation_loss:
-            min_val_loss = validation_loss
-            torch.save(model.state_dict(), args.trained_final_ae_path)
-
-    print("model saved to {}.".format(args.trained_final_ae_path))
-
-    st_dict = torch.load(args.trained_final_ae_path)
-    model.load_state_dict(st_dict)
-
-    return model
+    print("model saved to {}.".format(save_path))
 
 
 class NIDS_PREDICTOR(nn.Module):
 
-    def __init__(self, ae_model, reconstruction_model):
+    def __init__(self, reconstruction_model, normal_model, feature_part_length, cluster_part_length, embedding_size):
         super(NIDS_PREDICTOR, self).__init__()
 
-        self.fc1 = nn.Linear(args.n_z + 1, 8)
-        self.fc2 = nn.Linear(8, 2)
-        self.ae = ae_model
+        self.norm = normal_model
         self.rec = reconstruction_model
+        self.feature_part_length = feature_part_length
+
+        self.fc1 = nn.Linear(cluster_part_length, 32)
+        self.fc2 = nn.Linear(32, embedding_size)
+
+        self.fc3 = nn.Linear(2 * embedding_size + 1, 16)
+        self.fc4 = nn.Linear(16, 8)
+        self.fc5 = nn.Linear(8, 5)
 
     def forward(self, x):
-        _, z = self.ae(x)
-        x_bar, _ = self.rec(x)
+        x1 = x[:,:self.feature_part_length]
+        x2 = x[:,self.feature_part_length:]
 
-        rec_loss = torch.sqrt(torch.sum((x - x_bar) ** 2, dim=1, keepdim=True))
+        _, z = self.rec(x1)
+        x1_bar, _ = self.norm(x1)
 
-        z_c = torch.cat([z, rec_loss], dim=-1)
+        rec_loss = torch.sqrt(torch.sum((x1 - x1_bar) ** 2, dim=1, keepdim=True))
 
-        out_1 = torch.relu(self.fc1(z_c))
-        out_2 = self.fc2(out_1)
+        x2_1 = torch.relu(self.fc1(x2))
+        z2 = self.fc2(x2_1)
 
-        return out_2
+        x_conct = torch.cat([z, z2, rec_loss], dim=-1)
+
+        out_1 = torch.relu(self.fc3(x_conct))
+        out_2 = torch.relu(self.fc4(out_1))
+        out_3 = self.fc5(out_2)
+
+        return out_3
 
 
-def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring=False):
+def train_full_model(load_pretrained_ae=False):
+    feature_dimensions = total_dataset.get_original_feature_size()
+    cluster_dimensions = total_dataset.get_input_size() - feature_dimensions
 
-    if not load_trained_ae:
-        ae_model = train_autoencoder(load_pretrained_ae)
-    else:
-        ae_model = AE(
-            n_enc_1=84,
-            n_enc_2=63,
-            n_enc_3=21,
-            n_dec_1=21,
-            n_dec_2=63,
-            n_dec_3=84,
-            n_input=n_input,
-            n_z=args.n_z).to(device)
-        ae_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
-
-    #ae_model.requires_grad_(False)
+    print(feature_dimensions)
+    print(cluster_dimensions)
 
     rec_model = AE(
         n_enc_1=84,
@@ -345,67 +286,53 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
         n_dec_1=21,
         n_dec_2=63,
         n_dec_3=84,
-        n_input=n_input,
+        n_input=feature_dimensions,
         n_z=args.n_z).to(device)
 
-    rec_model.load_state_dict(torch.load(args.reconstruction_based_ae_pretrain_path))
+    norm_model = AE(
+        n_enc_1=84,
+        n_enc_2=63,
+        n_enc_3=21,
+        n_dec_1=21,
+        n_dec_2=63,
+        n_dec_3=84,
+        n_input=feature_dimensions,
+        n_z=args.n_z).to(device)
 
-    rec_model.requires_grad_(False)
+    if not load_pretrained_ae:
+        pretrain_ae(rec_model, total_dataset, args.rec_model_save_path, ae_pretrain_epochs)
+        pretrain_ae(norm_model, normal_dataset, args.norm_model_save_path, ae_pretrain_epochs)
 
-    if not_caring == True:
-        ae_model = AE(
-            n_enc_1=84,
-            n_enc_2=63,
-            n_enc_3=21,
-            n_dec_1=21,
-            n_dec_2=63,
-            n_dec_3=84,
-            n_input=n_input,
-            n_z=args.n_z).to(device)
+    rec_model.load_state_dict(torch.load(args.rec_model_save_path))
+    norm_model.load_state_dict(torch.load(args.norm_model_save_path))
 
-        rec_model = AE(
-            n_enc_1=84,
-            n_enc_2=63,
-            n_enc_3=21,
-            n_dec_1=21,
-            n_dec_2=63,
-            n_dec_3=84,
-            n_input=n_input,
-            n_z=args.n_z).to(device)
+    norm_model.requires_grad_(False)
 
-    main_model = NIDS_PREDICTOR(ae_model=ae_model, reconstruction_model=rec_model).to(device)
+    main_model = NIDS_PREDICTOR(reconstruction_model=rec_model, normal_model=norm_model,
+                                feature_part_length=feature_dimensions,
+                                cluster_part_length=cluster_dimensions, embedding_size=args.n_z).to(device)
 
-    training_data_length = int(0.8 * labeled_dataset.__len__())
-    validation_data_length = labeled_dataset.__len__() - training_data_length
-
-    training_data, validation_data = torch.utils.data.random_split(labeled_dataset,
-                                                                   [training_data_length, validation_data_length])
-
-    train_loader = DataLoader(training_data, batch_size=args.batch_size, shuffle=True)
-    validation_loader = DataLoader(validation_data, batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(labeled_dataset, batch_size=args.batch_size, shuffle=True)
 
     optimizer = Adam([
-                      {'params': main_model.ae.parameters(), 'lr': 0.001},
-                      {'params': main_model.fc1.parameters()},
-                      {'params': main_model.fc2.parameters()}], lr=0.001)
+        {'params': main_model.rec.parameters(), 'lr': 0.001},
+        {'params': main_model.fc1.parameters()},
+        {'params': main_model.fc2.parameters()},
+        {'params': main_model.fc3.parameters()},
+        {'params': main_model.fc4.parameters()},
+        {'params': main_model.fc5.parameters()}], lr=0.001)
 
     # optimizer = Adam(main_model.parameters(), lr=0.001)
     weights = labeled_dataset.get_weight()
     weights = torch.FloatTensor(weights).to(device)
 
-    min_validation_loss = 100000
-    max_val_acc = -1
+    min_train_loss = 1000000
 
-    for epoch in range(10):
+    for epoch in range(train_dnn_epochs):
         train_loss = 0.0
         train_batch_num = 0
         train_num_correct = 0
         train_num_examples = 0
-
-        val_loss = 0.0
-        val_batch_num = 0
-        val_num_correct = 0
-        val_num_examples = 0
 
         main_model.train()
         for batch_idx, (x, y_t, idx) in enumerate(train_loader):
@@ -429,39 +356,21 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
             train_num_examples += correct.shape[0]
 
         train_loss /= (train_batch_num + 1)
-
-        main_model.eval()
-        for batch_idx, (x, y_t, idx) in enumerate(validation_loader):
-            x = x.float()
-            x = x.to(device)
-            val_batch_num = batch_idx
-
-            y_pred = main_model(x)
-            y_t = y_t.to(device)
-            loss = torch.nn.CrossEntropyLoss(weight=weights)(y_pred, y_t)
-            val_loss += loss.item()
-
-            correct = torch.eq(torch.max(torch.softmax(y_pred, dim=-1), dim=1)[1], y_t).view(-1)
-            val_num_correct += torch.sum(correct).item()
-            val_num_examples += correct.shape[0]
-
-        val_loss /= (val_batch_num + 1)
-        val_acc = val_num_correct / val_num_examples
+        train_acc = train_num_correct / train_num_examples
 
         if epoch % 1 == 0:
-            print("epoch {}; T loss={:.4f} T Accuracy={:.4f}; V loss={:.4f} V Accuracy={:.4f}".
-                  format(epoch, train_loss, train_num_correct / train_num_examples, val_loss,
-                         val_num_correct / val_num_examples))
+            print("epoch {}; T loss={:.4f} T Accuracy={:.4f}".
+                  format(epoch, train_loss, train_num_correct / train_num_examples))
 
-        if epoch == 0 or min_validation_loss > val_loss:
-            min_validation_loss = val_loss
+        if epoch == 0 or min_train_loss > train_loss:
+            min_train_loss = train_loss
             torch.save(main_model.state_dict(), args.final_model_path)
 
     print("model saved to {}.".format(args.final_model_path))
 
     main_model.load_state_dict(torch.load(args.final_model_path))
 
-    test_loader = DataLoader(NSLKDD_dataset_test(), batch_size=22544, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=22544, shuffle=False)
     for batch_idx, (x, y_t, idx) in enumerate(test_loader):
         x = x.float()
         x = x.to(device)
@@ -476,4 +385,5 @@ def train_full_model(load_pretrained_ae=False, load_trained_ae=False, not_caring
         print(confusion_matrix(y_t, y_pred))
 
 
-train_full_model(False, False, False)
+add_cluster_label()
+train_full_model(load_pretrained_ae=False)

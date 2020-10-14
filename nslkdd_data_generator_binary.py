@@ -47,10 +47,9 @@ for k, v in ATTACK_DICT.items():
 
 
 def load_nslkdd(train_data=True):
-    nRowsRead = 5000  # specify 'None' if want to read whole file
+    nRowsRead = 10000  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
-                      nrows=nRowsRead)
+    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names, nrows=nRowsRead)
     df1.dataframeName = 'KDDTrain+.txt'
 
     df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
@@ -126,6 +125,9 @@ def load_nslkdd(train_data=True):
     train_normal = train_normal_df.values[:, :-1]
     train_Y = df1.values[:, -1]
 
+    train_Y_binary = train_Y == normal_label
+    train_Y = np.array(train_Y_binary).astype(np.int64)
+
     train_Y = np.array(train_Y).astype(np.int64)
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
 
@@ -134,6 +136,9 @@ def load_nslkdd(train_data=True):
 
     test_X = df2.values[:, :-1]
     test_Y = df2.values[:, -1]
+
+    test_Y_binary = test_Y == normal_label
+    test_Y = np.array(test_Y_binary).astype(np.int64)
 
     test_Y = np.array(test_Y).astype(np.int64)
 
@@ -166,13 +171,6 @@ def get_training_data(label_ratio):
             self.x = np.append(self.labeled_data[0], self.unlabeled_data[0], axis=0)
             self.y = np.append(self.labeled_data[1], self.unlabeled_data[1], axis=0)
             self.w = self.labeled_data[2]
-            self.feature_size = self.x.shape[1]
-
-        def set_x(self, new_x):
-            self.x = new_x
-
-        def get_original_feature_size(self):
-            return self.feature_size
 
         def __len__(self):
             labeled_data_length = self.labeled_data[0].shape[0]
@@ -226,13 +224,6 @@ def get_training_data(label_ratio):
         def __init__(self):
             self.x = train_normal
             self.y = np.ones((train_normal.shape[0])) * 2
-            self.feature_size = self.x.shape[1]
-
-        def set_x(self, new_x):
-            self.x = new_x
-
-        def get_original_feature_size(self):
-            return self.feature_size
 
         def __len__(self):
             return self.x.shape[0]
@@ -256,16 +247,9 @@ class NSLKDD_dataset_test(Dataset):
 
     def __init__(self):
         self.x, self.y = load_nslkdd(False)
-        self.feature_size = self.x.shape[1]
 
     def __len__(self):
         return self.x.shape[0]
-
-    def set_x(self, new_x):
-        self.x = new_x
-
-    def get_original_feature_size(self):
-        return self.feature_size
 
     def __getitem__(self, idx):
         return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \

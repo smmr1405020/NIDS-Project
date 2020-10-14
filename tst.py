@@ -3,12 +3,16 @@ from random import shuffle
 import numpy as np
 import torch
 
-b = np.array([[1,2,3],[4,5,6],[7,8,9]])
+b = np.array([[1,2,3],[4,5,6]]) # 2x3
+c = np.array([[7,8,9],[10,11,12],[13,14,15],[16,17,18]]) # 4x3
 
-b = torch.FloatTensor(b)
-b_n = torch.sqrt(torch.sum(b ** 2, dim=1,keepdim=True))
+c_exp = np.expand_dims(c,axis=1)
+print(c_exp.shape)
+c_exp_repeated = np.repeat(c_exp,b.shape[0],axis=1)
+print(c_exp_repeated)
 
-c = [1,3,4,5]
-shuffle(c)
-print(c)
+b_exp = np.expand_dims(b,axis=0)
+b_exp_repeated = np.repeat(b_exp,c.shape[0],axis=0)
+
+print(np.sqrt(np.sum((c_exp_repeated - b_exp_repeated) ** 2, axis=2)).shape)
 
