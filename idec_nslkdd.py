@@ -21,13 +21,13 @@ total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training
 test_dataset = NSLKDD_dataset_test()
 n_input = total_dataset.get_input_size() + 1
 
-ae_pretrain_epochs = 10
-train_dnn_epochs = 10
+ae_pretrain_epochs = 500
+train_dnn_epochs = 350
 
 
 def add_cluster_label():
     data_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
-    clustering = OPTICS(min_samples=10)
+    clustering = OPTICS(min_samples=20)
 
     clusters = dict()
     firsttime = 1

@@ -47,7 +47,7 @@ for k, v in ATTACK_DICT.items():
 
 
 def load_nslkdd(train_data=True):
-    nRowsRead = 5000  # specify 'None' if want to read whole file
+    nRowsRead = None  # specify 'None' if want to read whole file
 
     df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
