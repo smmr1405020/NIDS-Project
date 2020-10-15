@@ -4,6 +4,8 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from imblearn import over_sampling
+from  imblearn import  under_sampling
 
 np.random.seed(12345)
 torch.manual_seed(12345)
@@ -49,7 +51,7 @@ for k, v in ATTACK_DICT.items():
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names,
+    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
     df1.dataframeName = 'KDDTrain+.txt'
 
@@ -62,6 +64,7 @@ def load_nslkdd(train_data=True, test_data_neg=False):
     df1.drop(['difficulty_level'], axis=1, inplace=True)
     df2.drop(['difficulty_level'], axis=1, inplace=True)
     df3.drop(['difficulty_level'], axis=1, inplace=True)
+
 
     df1.sample(frac=1)
 
@@ -150,7 +153,36 @@ def load_nslkdd(train_data=True, test_data_neg=False):
     train_Y = df1.values[:, -1]
 
     train_Y = np.array(train_Y).astype(np.int64)
+
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
+    # print(trYunique)
+    # print(trYcounts)
+
+    oversampling_count = dict()
+    max_count = np.max(trYcounts)
+    for i in range(len(trYunique)):
+        if trYcounts[i] != max_count:
+            oversampling_count[trYunique[i]] = min(10*trYcounts[i], max(trYcounts[i], int(0.25*max_count)))
+
+    sm = over_sampling.BorderlineSMOTE(sampling_strategy=oversampling_count, random_state=42, k_neighbors=4)
+    train_X, train_Y = sm.fit_resample(train_X, train_Y)
+
+    trYunique, trYcounts = np.unique(train_Y, return_counts=True)
+
+    undersampling_count = dict()
+    max_count = np.max(trYcounts)
+    for i in range(len(trYunique)):
+        if trYcounts[i] ==  max_count:
+            undersampling_count[trYunique[i]] = int(0.5 * max_count)
+
+    under = under_sampling.RandomUnderSampler(sampling_strategy=undersampling_count, random_state=42)
+    train_X, train_Y = under.fit_resample(train_X, train_Y)
+
+    # print(train_X.shape)
+    # print(train_Y.shape)
+    # trYunique, trYcounts = np.unique(train_Y, return_counts=True)
+    # print(trYunique)
+    # print(trYcounts)
 
     weights = [max(trYcounts) / trYcounts[i] for i in range(len(trYcounts))]
     weights = np.array(weights)
@@ -329,3 +361,5 @@ def cluster_acc(y_true, y_pred):
         y = ind[1][i]
         sm += w[x, y]
     return sm * 1.0 / y_pred.size
+
+#load_nslkdd(True)

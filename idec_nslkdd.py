@@ -66,11 +66,10 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
 
             applicable_clusters = []
             for k, v in label_to_cluster_dict.items():
-                if k != 2 :
-                    total_cluster_selection = min(len(v), 20)
-                    v = sorted(v, key=lambda item: item[1])
-                    for i in range(total_cluster_selection):
-                        applicable_clusters.append(v[i][0])
+                total_cluster_selection = min(len(v), 20)
+                v = sorted(v, key=lambda item: item[1])
+                for i in range(total_cluster_selection):
+                    applicable_clusters.append(v[i][0])
 
             for cluster_id in list(clusters.keys()):
                 if cluster_id not in applicable_clusters:
@@ -442,7 +441,7 @@ def train_full_model(load_pretrained_ae=False):
     norm_model.load_state_dict(torch.load(args.norm_model_save_path))
 
     norm_model.requires_grad_(False)
-    rec_model.requires_grad_(False)
+    # rec_model.requires_grad_(False)
 
     main_model = NIDS_PREDICTOR(reconstruction_model=rec_model, normal_model=norm_model,
                                 feature_part_length=feature_dimensions,
@@ -451,7 +450,7 @@ def train_full_model(load_pretrained_ae=False):
     train_loader = DataLoader(labeled_dataset, batch_size=args.batch_size, shuffle=True)
 
     optimizer = Adam([
-        #{'params': main_model.rec.parameters(), 'lr' : 0.0001},
+        # {'params': main_model.rec.parameters(), 'lr' : 0.0001},
         {'params': main_model.fc3.parameters()},
         {'params': main_model.fc4.parameters()},
         {'params': main_model.fc5.parameters()}], lr=0.0009)
@@ -534,5 +533,5 @@ def train_full_model(load_pretrained_ae=False):
         print(confusion_matrix(y_t, y_pred))
 
 
-add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False)
-train_full_model(load_pretrained_ae=False)
+add_cluster_label(load_cluster_centers_from_numpy=True, load_ds_from_numpy=True)
+train_full_model(load_pretrained_ae=True)
