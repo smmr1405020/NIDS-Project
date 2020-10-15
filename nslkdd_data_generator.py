@@ -53,7 +53,7 @@ def load_nslkdd(train_data=True, test_data_neg=False):
 
     df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
-    df1.dataframeName = 'KDDTrain+.txt'
+    df1.dataframeName = 'KDDTrain+_20Percent.txt'
 
     df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
     df2.dataframeName = 'KDDTest+.txt'
@@ -165,7 +165,7 @@ def load_nslkdd(train_data=True, test_data_neg=False):
             oversampling_count[trYunique[i]] = min(10*trYcounts[i], max(trYcounts[i], int(0.25*max_count)))
 
     sm = over_sampling.BorderlineSMOTE(sampling_strategy=oversampling_count, random_state=42, k_neighbors=4)
-    train_X, train_Y = sm.fit_resample(train_X, train_Y)
+    #train_X, train_Y = sm.fit_resample(train_X, train_Y)
 
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
 
@@ -362,4 +362,4 @@ def cluster_acc(y_true, y_pred):
         sm += w[x, y]
     return sm * 1.0 / y_pred.size
 
-#load_nslkdd(True)
+load_nslkdd(True)

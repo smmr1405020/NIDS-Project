@@ -66,10 +66,11 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
 
             applicable_clusters = []
             for k, v in label_to_cluster_dict.items():
-                total_cluster_selection = min(len(v), 20)
-                v = sorted(v, key=lambda item: item[1])
-                for i in range(total_cluster_selection):
-                    applicable_clusters.append(v[i][0])
+                if k != 2:
+                    total_cluster_selection = min(len(v), 20)
+                    v = sorted(v, key=lambda item: item[1])
+                    for i in range(total_cluster_selection):
+                        applicable_clusters.append(v[i][0])
 
             for cluster_id in list(clusters.keys()):
                 if cluster_id not in applicable_clusters:
@@ -533,5 +534,5 @@ def train_full_model(load_pretrained_ae=False):
         print(confusion_matrix(y_t, y_pred))
 
 
-add_cluster_label(load_cluster_centers_from_numpy=True, load_ds_from_numpy=True)
-train_full_model(load_pretrained_ae=True)
+add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False)
+train_full_model(load_pretrained_ae=False)
