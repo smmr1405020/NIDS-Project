@@ -18,12 +18,15 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=0.1)
+total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
 test_dataset = NSLKDD_dataset_test()
+test_dataset_neg = NSLKDD_dataset_test(test_neg=True)
 n_input = total_dataset.get_input_size() + 1
 
 ae_pretrain_epochs = 150
-train_dnn_epochs = 20
+train_dnn_epochs = 200
+
+normal_label = 2
 
 
 def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False):
@@ -63,7 +66,7 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
 
             applicable_clusters = []
             for k, v in label_to_cluster_dict.items():
-                if k != 2:
+                if k != 2 :
                     total_cluster_selection = min(len(v), 20)
                     v = sorted(v, key=lambda item: item[1])
                     for i in range(total_cluster_selection):
@@ -224,6 +227,35 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
             test_dataset.set_x(new_x)
             break
 
+        print("Test Dataset Neg Distance Calculation")
+        test_neg_loader = DataLoader(test_dataset_neg, batch_size=test_dataset_neg.__len__(), shuffle=False)
+        for batch_idx, (x, y, w) in enumerate(test_neg_loader):
+            num_data = x.cpu().detach().numpy()
+            labels = y.cpu().detach().numpy()
+
+            label, count = np.unique(labels, return_counts=True)
+            print(label)
+            print(count)
+
+            firsttime = True
+            distances = None
+            for i in range(len(num_data)):
+                sample = np.expand_dims(num_data[i], axis=0)
+                sample_rep = np.repeat(sample, cluster_centers.shape[0], axis=0)
+                distance = np.expand_dims(np.sqrt(np.sum((sample_rep - cluster_centers) ** 2, axis=1)), axis=0)
+
+                if not firsttime:
+                    distances = np.concatenate([distances, distance], axis=0)
+                else:
+                    distances = np.array(distance)
+                    firsttime = False
+
+            new_x = np.concatenate([num_data, distances], axis=1)
+            new_x = scaler.transform(new_x)
+            np.save(args.test_ds_neg_np, new_x)
+            test_dataset_neg.set_x(new_x)
+            break
+
     else:
         total_dataset.set_x(np.load(args.total_ds_np))
         labeled_dataset.set_x(np.load(args.labeled_ds_np))
@@ -232,6 +264,7 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
         if normal_dataset.__len__() != 0:
             normal_dataset.set_x(np.load(args.normal_ds_np))
         test_dataset.set_x(np.load(args.test_ds_np))
+        test_dataset_neg.set_x(np.load(args.test_ds_neg_np))
 
     print("Done.")
 
@@ -353,10 +386,7 @@ class NIDS_PREDICTOR(nn.Module):
         self.rec = reconstruction_model
         self.feature_part_length = feature_part_length
 
-        self.fc1 = nn.Linear(cluster_part_length, 32)
-        self.fc2 = nn.Linear(32, embedding_size)
-
-        self.fc3 = nn.Linear(cluster_part_length + embedding_size + 1, 16)
+        self.fc3 = nn.Linear(cluster_part_length + 2 * embedding_size, 16)
         self.fc4 = nn.Linear(16, 8)
         self.fc5 = nn.Linear(8, 5)
 
@@ -364,13 +394,12 @@ class NIDS_PREDICTOR(nn.Module):
         x1 = x[:, :self.feature_part_length]
         x2 = x[:, self.feature_part_length:]
 
-        _, z = self.rec(x1)
-        x1_bar, _ = self.norm(x1)
+        x_bar, z = self.rec(x1)
+        x1_bar, z1 = self.norm(x1)
 
-        rec_loss = torch.sqrt(torch.sum((x1 - x1_bar) ** 2, dim=1, keepdim=True))
+        rec_loss = z - z1
 
         x_conct = torch.cat([z, x2, rec_loss], dim=-1)
-
         out_1 = torch.relu(self.fc3(x_conct))
         out_2 = torch.relu(self.fc4(out_1))
         out_3 = self.fc5(out_2)
@@ -413,6 +442,7 @@ def train_full_model(load_pretrained_ae=False):
     norm_model.load_state_dict(torch.load(args.norm_model_save_path))
 
     norm_model.requires_grad_(False)
+    rec_model.requires_grad_(False)
 
     main_model = NIDS_PREDICTOR(reconstruction_model=rec_model, normal_model=norm_model,
                                 feature_part_length=feature_dimensions,
@@ -421,12 +451,10 @@ def train_full_model(load_pretrained_ae=False):
     train_loader = DataLoader(labeled_dataset, batch_size=args.batch_size, shuffle=True)
 
     optimizer = Adam([
-        {'params': main_model.rec.parameters(), 'lr': 0.001},
-        {'params': main_model.fc1.parameters()},
-        {'params': main_model.fc2.parameters()},
+        #{'params': main_model.rec.parameters(), 'lr' : 0.0001},
         {'params': main_model.fc3.parameters()},
         {'params': main_model.fc4.parameters()},
-        {'params': main_model.fc5.parameters()}], lr=0.001)
+        {'params': main_model.fc5.parameters()}], lr=0.0009)
 
     # optimizer = Adam(main_model.parameters(), lr=0.001)
     weights = labeled_dataset.get_weight()
@@ -476,8 +504,23 @@ def train_full_model(load_pretrained_ae=False):
 
     main_model.load_state_dict(torch.load(args.final_model_path))
 
-    test_loader = DataLoader(test_dataset, batch_size=22544, shuffle=False)
+    main_model.eval()
+    test_loader = DataLoader(test_dataset, batch_size=test_dataset.__len__(), shuffle=False)
     for batch_idx, (x, y_t, idx) in enumerate(test_loader):
+        x = x.float()
+        x = x.to(device)
+
+        y_pred = main_model(x)
+        y_t = y_t.to(device)
+
+        y_pred = torch.max(torch.softmax(y_pred, dim=-1), dim=1)[1]
+        y_pred = y_pred.cpu().detach().numpy()
+        y_t = y_t.cpu().detach().numpy()
+
+        print(confusion_matrix(y_t, y_pred))
+
+    test_neg_loader = DataLoader(test_dataset_neg, batch_size=test_dataset_neg.__len__(), shuffle=False)
+    for batch_idx, (x, y_t, idx) in enumerate(test_neg_loader):
         x = x.float()
         x = x.to(device)
 

@@ -24,7 +24,7 @@ normal_ds_np = "./Dataset_NSLKDD_2/normal_ds_np_20p.npy"
 labeled_ds_np = "./Dataset_NSLKDD_2/labeled_ds_np_20p.npy"
 unlabeled_ds_np = "./Dataset_NSLKDD_2/unlabeled_ds_np_20p.npy"
 test_ds_np = "./Dataset_NSLKDD_2/test_ds_np_20p.npy"
-
+test_ds_neg_np = "./Dataset_NSLKDD_2/test_ds_neg_np_20p.npy"
 
 
 

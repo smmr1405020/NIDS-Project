@@ -46,7 +46,7 @@ for k, v in ATTACK_DICT.items():
         ATTACK_MAP[att] = k
 
 
-def load_nslkdd(train_data=True):
+def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
     df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
@@ -56,8 +56,12 @@ def load_nslkdd(train_data=True):
     df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
     df2.dataframeName = 'KDDTest+.txt'
 
+    df3 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest-21.txt', delimiter=',', header=None, names=col_names)
+    df3.dataframeName = 'KDDTest-21.txt'
+
     df1.drop(['difficulty_level'], axis=1, inplace=True)
     df2.drop(['difficulty_level'], axis=1, inplace=True)
+    df3.drop(['difficulty_level'], axis=1, inplace=True)
 
     df1.sample(frac=1)
 
@@ -71,6 +75,8 @@ def load_nslkdd(train_data=True):
         if col != 'label':
             onehot_cols_train = pd.get_dummies(df1[col], prefix=col, dtype='float64')
             onehot_cols_test = pd.get_dummies(df2[col], prefix=col, dtype='float64')
+            onehot_cols_test2 = pd.get_dummies(df3[col], prefix=col, dtype='float64')
+
 
             idx = 0
             for find_col_idx in range(len(list(df1.columns))):
@@ -87,15 +93,23 @@ def load_nslkdd(train_data=True):
                 else:
                     df2.insert(idx + itr + 1, new_col, onehot_cols_test[new_col].values, True)
 
+                if new_col not in list(onehot_cols_test2.columns):
+                    zero_col = np.zeros(df3.values.shape[0])
+                    df3.insert(idx + itr + 1, new_col, zero_col, True)
+                else:
+                    df3.insert(idx + itr + 1, new_col, onehot_cols_test2[new_col].values, True)
+
                 itr += 1
 
             del df1[col]
             del df2[col]
+            del df3[col]
 
         else:
 
             df1[col] = df1[col].map(ATTACK_MAP)
             df2[col] = df2[col].map(ATTACK_MAP)
+            df3[col] = df3[col].map(ATTACK_MAP)
 
             df1[col] = df1[col].astype('category')
 
@@ -115,6 +129,15 @@ def load_nslkdd(train_data=True):
                     df2.at[i, col] = len(cat_dict) + 1
 
             df2[col] = df2[col].astype('int64')
+
+            df3[col] = df3[col].astype('category')
+            df3 = df3.replace({col: cat_dict})
+
+            for i in range(len(df3[col])):
+                if type(df3[col][i]) is str:
+                    df3.at[i, col] = len(cat_dict) + 1
+
+            df3[col] = df3[col].astype('int64')
 
     # df1 = df1[df1.labels != cat_dict['Normal']]
 
@@ -137,17 +160,25 @@ def load_nslkdd(train_data=True):
 
     test_Y = np.array(test_Y).astype(np.int64)
 
+    test_X2 = df3.values[:, :-1]
+    test_Y2 = df3.values[:, -1]
+
+    test_Y2 = np.array(test_Y2).astype(np.int64)
+
     scaler = StandardScaler()
     scaler.fit(train_X)
 
     train_X = scaler.transform(train_X)
     train_normal = scaler.transform(train_normal)
     test_X = scaler.transform(test_X)
+    test_X2 = scaler.transform(test_X2)
 
     if train_data:
         return train_X, train_Y, weights, train_normal
-    else:
+    elif not test_data_neg:
         return test_X, test_Y
+    else:
+        return test_X2, test_Y2
 
 
 def get_training_data(label_ratio):
@@ -254,8 +285,8 @@ def get_training_data(label_ratio):
 
 class NSLKDD_dataset_test(Dataset):
 
-    def __init__(self):
-        self.x, self.y = load_nslkdd(False)
+    def __init__(self, test_neg = False):
+        self.x, self.y = load_nslkdd(False, test_data_neg=test_neg)
         self.feature_size = self.x.shape[1]
 
     def __len__(self):
