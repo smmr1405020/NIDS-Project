@@ -20,12 +20,11 @@ random.seed(12345)
 
 
 ATTACK_DICT = {
-    'DoS': ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm',
-            'worm'],
+    'DoS': ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm'],
     'Probe': ['ipsweep', 'mscan', 'nmap', 'portsweep', 'saint', 'satan'],
-    'Privilege': ['buffer_overflow', 'loadmodule', 'perl', 'ps', 'rootkit', 'sqlattack', 'xterm'],
-    'Access': ['ftp_write', 'guess_passwd', 'httptunnel', 'imap', 'multihop', 'named', 'phf', 'sendmail',
-               'snmpgetattack', 'snmpguess', 'spy', 'warezclient', 'warezmaster', 'xlock', 'xsnoop'],
+    'Privilege': ['buffer_overflow', 'loadmodule', 'perl', 'ps', 'rootkit', 'sqlattack', 'xterm','httptunnel'],
+    'Access': ['ftp_write', 'guess_passwd', 'imap', 'multihop', 'named', 'phf', 'sendmail',
+               'snmpgetattack', 'snmpguess', 'spy', 'warezclient', 'warezmaster', 'xlock', 'xsnoop','worm'],
     'Normal': ['normal']
 }
 
@@ -49,7 +48,7 @@ for k, v in ATTACK_DICT.items():
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names,
+    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
     df1.dataframeName = 'KDDTrain+.txt'
 
