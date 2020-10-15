@@ -18,12 +18,12 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=0.1)
+total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
 test_dataset = NSLKDD_dataset_test()
 n_input = total_dataset.get_input_size() + 1
 
 ae_pretrain_epochs = 10
-train_dnn_epochs = 10
+train_dnn_epochs = 20
 
 
 def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False):
