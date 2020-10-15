@@ -49,7 +49,7 @@ for k, v in ATTACK_DICT.items():
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
+    df1 = pd.read_csv('./Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
     df1.dataframeName = 'KDDTrain+.txt'
 

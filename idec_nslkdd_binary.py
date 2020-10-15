@@ -66,7 +66,10 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
 
             applicable_clusters = []
             for k, v in label_to_cluster_dict.items():
-                    total_cluster_selection = min(len(v), 20)
+                    if k != 1:
+                        total_cluster_selection = min(len(v), 80)
+                    else:
+                        total_cluster_selection = min(len(v), 20)
                     v = sorted(v, key=lambda item: item[1])
                     for i in range(total_cluster_selection):
                         applicable_clusters.append(v[i][0])
