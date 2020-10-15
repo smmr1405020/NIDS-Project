@@ -10,6 +10,7 @@ from nslkdd_data_generator import get_training_data, NSLKDD_dataset_test
 from sklearn.metrics import confusion_matrix
 from sklearn.cluster import OPTICS
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 np.random.seed(12345)
 torch.manual_seed(12345)
@@ -17,112 +18,220 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=0.1)
 test_dataset = NSLKDD_dataset_test()
 n_input = total_dataset.get_input_size() + 1
 
-ae_pretrain_epochs = 500
-train_dnn_epochs = 350
+ae_pretrain_epochs = 10
+train_dnn_epochs = 10
 
 
-def add_cluster_label():
+def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False):
     data_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
-    clustering = OPTICS(min_samples=20)
+    clustering = OPTICS(min_samples=5)
 
     clusters = dict()
     firsttime = 1
     cluster_centers = None
+    scaler = StandardScaler()
 
-    for batch_idx, (x, y, w) in enumerate(data_loader):
-        num_data = x.cpu().detach().numpy()
-        print("Clustering Started.")
-        clustering.fit(num_data)
-        print("Clustering ended.")
-        cluster_assignment = clustering.labels_
+    if not load_cluster_centers_from_numpy:
+        for batch_idx, (x, y, w) in enumerate(data_loader):
+            num_data = x.cpu().detach().numpy()
+            labels = y.cpu().detach().numpy()
+            print("Clustering Started.")
+            clustering.fit(num_data)
+            print("Clustering ended.")
+            cluster_assignment = clustering.labels_
 
-        for i in range(len(cluster_assignment)):
-            clusters.setdefault(cluster_assignment[i], []).append(num_data[i])
+            for i in range(len(cluster_assignment)):
+                clusters.setdefault(cluster_assignment[i], []).append(num_data[i])
 
-        for k, v in clusters.items():
-            if k != -1:
-                cluster = np.array(v)
-                kmeans_clustering = KMeans(n_clusters=np.max([int(np.round(cluster.shape[0] / 20)), 1]), random_state=0)
-                kmeans_clustering.fit(cluster)
-                if firsttime:
-                    cluster_centers = np.array(kmeans_clustering.cluster_centers_)
-                    firsttime = 0
+            cluster_to_label_dict = dict()
+
+            for i in range(len(cluster_assignment)):
+                if labels[i] != -1:
+                    cluster_to_label_dict.setdefault(cluster_assignment[i], []).append(labels[i])
+
+            label_to_cluster_dict = dict()
+            for k, v in cluster_to_label_dict.items():
+                if k == -1:
+                    continue
+                label = np.max(v)
+                size = len(v)
+                label_to_cluster_dict.setdefault(label, []).append([k, size])
+
+            applicable_clusters = []
+            for k, v in label_to_cluster_dict.items():
+                if k != 2:
+                    total_cluster_selection = min(len(v), 20)
+                    v = sorted(v, key=lambda item: item[1])
+                    for i in range(total_cluster_selection):
+                        applicable_clusters.append(v[i][0])
+
+            for cluster_id in list(clusters.keys()):
+                if cluster_id not in applicable_clusters:
+                    del clusters[cluster_id]
+
+            for k, v in clusters.items():
+                if k != -1:
+                    cluster = np.array(v)
+                    kmeans_clustering = KMeans(n_clusters=np.max([int(np.round(cluster.shape[0] / 20)), 1]),
+                                               random_state=0)
+                    kmeans_clustering.fit(cluster)
+                    if firsttime:
+                        cluster_centers = np.array(kmeans_clustering.cluster_centers_)
+                        firsttime = 0
+                    else:
+                        cluster_centers = np.concatenate(
+                            [cluster_centers, np.array(kmeans_clustering.cluster_centers_)],
+                            axis=0)
+
+            np.save(args.cluster_centers_np, cluster_centers)
+            break
+    else:
+        cluster_centers = np.load(args.cluster_centers_np)
+
+    print(cluster_centers.shape[0])
+
+    if not load_ds_from_numpy:
+        print("Total Dataset Distance Calculation")
+        total_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
+        for batch_idx, (x, y, w) in enumerate(total_loader):
+            num_data = x.cpu().detach().numpy()
+            firsttime = True
+            distances = None
+            for i in range(len(num_data)):
+                sample = np.expand_dims(num_data[i], axis=0)
+                sample_rep = np.repeat(sample, cluster_centers.shape[0], axis=0)
+                distance = np.expand_dims(np.sqrt(np.sum((sample_rep - cluster_centers) ** 2, axis=1)), axis=0)
+
+                if not firsttime:
+                    distances = np.concatenate([distances, distance], axis=0)
                 else:
-                    cluster_centers = np.concatenate([cluster_centers, np.array(kmeans_clustering.cluster_centers_)],
-                                                     axis=0)
+                    distances = np.array(distance)
+                    firsttime = False
 
-        break
-
-    print("Total Dataset Distance Calculation")
-    total_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
-    for batch_idx, (x, y, w) in enumerate(total_loader):
-        num_data = x.cpu().detach().numpy()
-        cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
-        cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
-        num_data_exp = np.expand_dims(num_data, axis=1)
-        num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
-        distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
-        new_x = np.concatenate([num_data, distances], axis=1)
-        total_dataset.set_x(new_x)
-        break
-
-    print("Labeled Dataset Distance Calculation")
-    labeled_loader = DataLoader(labeled_dataset, batch_size=labeled_dataset.__len__(), shuffle=False)
-    for batch_idx, (x, y, w) in enumerate(labeled_loader):
-        num_data = x.cpu().detach().numpy()
-        cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
-        cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
-        num_data_exp = np.expand_dims(num_data, axis=1)
-        num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
-        distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
-        new_x = np.concatenate([num_data, distances], axis=1)
-        labeled_dataset.set_x(new_x)
-        break
-
-    print("Unlabeled Dataset Distance Calculation")
-    if unlabeled_dataset.__len__() != 0:
-        unlabeled_loader = DataLoader(unlabeled_dataset, batch_size=unlabeled_dataset.__len__(), shuffle=False)
-        for batch_idx, (x, y, w) in enumerate(unlabeled_loader):
-            num_data = x.cpu().detach().numpy()
-            cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
-            cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
-            num_data_exp = np.expand_dims(num_data, axis=1)
-            num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
-            distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
             new_x = np.concatenate([num_data, distances], axis=1)
-            unlabeled_dataset.set_x(new_x)
+
+            scaler.fit(new_x)
+
+            new_x = scaler.transform(new_x)
+            np.save(args.total_ds_np, new_x)
+
+            total_dataset.set_x(new_x)
             break
 
-    print("Normal Dataset Distance Calculation")
-    if normal_dataset.__len__() != 0:
-        normal_loader = DataLoader(normal_dataset, batch_size=normal_dataset.__len__(), shuffle=False)
-        for batch_idx, (x, y, w) in enumerate(normal_loader):
+        print("Labeled Dataset Distance Calculation")
+        labeled_loader = DataLoader(labeled_dataset, batch_size=labeled_dataset.__len__(), shuffle=False)
+        for batch_idx, (x, y, w) in enumerate(labeled_loader):
             num_data = x.cpu().detach().numpy()
-            cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
-            cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
-            num_data_exp = np.expand_dims(num_data, axis=1)
-            num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
-            distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
+
+            firsttime = True
+            distances = None
+            for i in range(len(num_data)):
+                sample = np.expand_dims(num_data[i], axis=0)
+                sample_rep = np.repeat(sample, cluster_centers.shape[0], axis=0)
+                distance = np.expand_dims(np.sqrt(np.sum((sample_rep - cluster_centers) ** 2, axis=1)), axis=0)
+
+                if not firsttime:
+                    distances = np.concatenate([distances, distance], axis=0)
+                else:
+                    distances = np.array(distance)
+                    firsttime = False
+
             new_x = np.concatenate([num_data, distances], axis=1)
-            normal_dataset.set_x(new_x)
+            new_x = scaler.transform(new_x)
+            np.save(args.labeled_ds_np, new_x)
+            labeled_dataset.set_x(new_x)
             break
 
-    print("Test Dataset Distance Calculation")
-    test_loader = DataLoader(test_dataset, batch_size=test_dataset.__len__(), shuffle=False)
-    for batch_idx, (x, y, w) in enumerate(test_loader):
-        num_data = x.cpu().detach().numpy()
-        cluster_centers_exp = np.expand_dims(cluster_centers, axis=0)
-        cluster_centers_exp_rep = np.repeat(cluster_centers_exp, num_data.shape[0], axis=0)
-        num_data_exp = np.expand_dims(num_data, axis=1)
-        num_data_exp_rep = np.repeat(num_data_exp, cluster_centers.shape[0], axis=1)
-        distances = np.sqrt(np.sum((num_data_exp_rep - cluster_centers_exp_rep) ** 2, axis=2))
-        new_x = np.concatenate([num_data, distances], axis=1)
-        test_dataset.set_x(new_x)
-        break
+        print("Unlabeled Dataset Distance Calculation")
+        if unlabeled_dataset.__len__() != 0:
+            unlabeled_loader = DataLoader(unlabeled_dataset, batch_size=unlabeled_dataset.__len__(), shuffle=False)
+            for batch_idx, (x, y, w) in enumerate(unlabeled_loader):
+                num_data = x.cpu().detach().numpy()
+                firsttime = True
+                distances = None
+                for i in range(len(num_data)):
+                    sample = np.expand_dims(num_data[i], axis=0)
+                    sample_rep = np.repeat(sample, cluster_centers.shape[0], axis=0)
+                    distance = np.expand_dims(np.sqrt(np.sum((sample_rep - cluster_centers) ** 2, axis=1)), axis=0)
+
+                    if not firsttime:
+                        distances = np.concatenate([distances, distance], axis=0)
+                    else:
+                        distances = np.array(distance)
+                        firsttime = False
+
+                new_x = np.concatenate([num_data, distances], axis=1)
+                new_x = scaler.transform(new_x)
+                np.save(args.unlabeled_ds_np, new_x)
+                unlabeled_dataset.set_x(new_x)
+                break
+
+        print("Normal Dataset Distance Calculation")
+        if normal_dataset.__len__() != 0:
+            normal_loader = DataLoader(normal_dataset, batch_size=normal_dataset.__len__(), shuffle=False)
+            for batch_idx, (x, y, w) in enumerate(normal_loader):
+                num_data = x.cpu().detach().numpy()
+                firsttime = True
+                distances = None
+                for i in range(len(num_data)):
+                    sample = np.expand_dims(num_data[i], axis=0)
+                    sample_rep = np.repeat(sample, cluster_centers.shape[0], axis=0)
+                    distance = np.expand_dims(np.sqrt(np.sum((sample_rep - cluster_centers) ** 2, axis=1)), axis=0)
+
+                    if not firsttime:
+                        distances = np.concatenate([distances, distance], axis=0)
+                    else:
+                        distances = np.array(distance)
+                        firsttime = False
+
+                new_x = np.concatenate([num_data, distances], axis=1)
+                new_x = scaler.transform(new_x)
+                np.save(args.normal_ds_np, new_x)
+                normal_dataset.set_x(new_x)
+                break
+
+        print("Test Dataset Distance Calculation")
+        test_loader = DataLoader(test_dataset, batch_size=test_dataset.__len__(), shuffle=False)
+        for batch_idx, (x, y, w) in enumerate(test_loader):
+            num_data = x.cpu().detach().numpy()
+
+            labels = y.cpu().detach().numpy()
+
+            label, count = np.unique(labels, return_counts=True)
+            print(label)
+            print(count)
+
+            firsttime = True
+            distances = None
+            for i in range(len(num_data)):
+                sample = np.expand_dims(num_data[i], axis=0)
+                sample_rep = np.repeat(sample, cluster_centers.shape[0], axis=0)
+                distance = np.expand_dims(np.sqrt(np.sum((sample_rep - cluster_centers) ** 2, axis=1)), axis=0)
+
+                if not firsttime:
+                    distances = np.concatenate([distances, distance], axis=0)
+                else:
+                    distances = np.array(distance)
+                    firsttime = False
+
+            new_x = np.concatenate([num_data, distances], axis=1)
+            new_x = scaler.transform(new_x)
+            np.save(args.test_ds_np, new_x)
+            test_dataset.set_x(new_x)
+            break
+
+    else:
+        total_dataset.set_x(np.load(args.total_ds_np))
+        labeled_dataset.set_x(np.load(args.labeled_ds_np))
+        if unlabeled_dataset.__len__() != 0:
+            unlabeled_dataset.set_x(np.load(args.unlabeled_ds_np))
+        if normal_dataset.__len__() != 0:
+            normal_dataset.set_x(np.load(args.normal_ds_np))
+        test_dataset.set_x(np.load(args.test_ds_np))
 
     print("Done.")
 
@@ -195,7 +304,7 @@ def pretrain_ae(model, data, save_path, epochs):
             x = x.float()
             x = x.to(device)
 
-            x = x[:,:x_dim]
+            x = x[:, :x_dim]
 
             train_batch_num = batch_idx
 
@@ -214,7 +323,7 @@ def pretrain_ae(model, data, save_path, epochs):
             x = x.float()
             x = x.to(device)
 
-            x = x[:,:x_dim]
+            x = x[:, :x_dim]
 
             val_batch_num = batch_idx
 
@@ -247,23 +356,20 @@ class NIDS_PREDICTOR(nn.Module):
         self.fc1 = nn.Linear(cluster_part_length, 32)
         self.fc2 = nn.Linear(32, embedding_size)
 
-        self.fc3 = nn.Linear(2 * embedding_size + 1, 16)
+        self.fc3 = nn.Linear(cluster_part_length + embedding_size + 1, 16)
         self.fc4 = nn.Linear(16, 8)
         self.fc5 = nn.Linear(8, 5)
 
     def forward(self, x):
-        x1 = x[:,:self.feature_part_length]
-        x2 = x[:,self.feature_part_length:]
+        x1 = x[:, :self.feature_part_length]
+        x2 = x[:, self.feature_part_length:]
 
         _, z = self.rec(x1)
         x1_bar, _ = self.norm(x1)
 
         rec_loss = torch.sqrt(torch.sum((x1 - x1_bar) ** 2, dim=1, keepdim=True))
 
-        x2_1 = torch.relu(self.fc1(x2))
-        z2 = self.fc2(x2_1)
-
-        x_conct = torch.cat([z, z2, rec_loss], dim=-1)
+        x_conct = torch.cat([z, x2, rec_loss], dim=-1)
 
         out_1 = torch.relu(self.fc3(x_conct))
         out_2 = torch.relu(self.fc4(out_1))
@@ -385,5 +491,5 @@ def train_full_model(load_pretrained_ae=False):
         print(confusion_matrix(y_t, y_pred))
 
 
-add_cluster_label()
+add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False)
 train_full_model(load_pretrained_ae=False)

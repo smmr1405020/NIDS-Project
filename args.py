@@ -18,4 +18,14 @@ rec_model_save_path = "./Dataset_NSLKDD_2/rec_model"
 norm_model_save_path = "./Dataset_NSLKDD_2/norm_model"
 
 
+cluster_centers_np = "./Dataset_NSLKDD_2/cluster_centers_np_20p.npy"
+total_ds_np = "./Dataset_NSLKDD_2/total_ds_np_20p.npy"
+normal_ds_np = "./Dataset_NSLKDD_2/normal_ds_np_20p.npy"
+labeled_ds_np = "./Dataset_NSLKDD_2/labeled_ds_np_20p.npy"
+unlabeled_ds_np = "./Dataset_NSLKDD_2/unlabeled_ds_np_20p.npy"
+test_ds_np = "./Dataset_NSLKDD_2/test_ds_np_20p.npy"
+
+
+
+
 tol = 0.0
