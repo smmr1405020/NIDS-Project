@@ -18,11 +18,11 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=0.1)
 test_dataset = NSLKDD_dataset_test()
 n_input = total_dataset.get_input_size() + 1
 
-ae_pretrain_epochs = 10
+ae_pretrain_epochs = 150
 train_dnn_epochs = 20
 
 
