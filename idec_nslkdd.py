@@ -11,6 +11,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.cluster import OPTICS
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score,classification_report
 
 np.random.seed(12345)
 torch.manual_seed(12345)
@@ -18,13 +19,13 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset, normal_dataset = get_training_data(label_ratio=0.5)
 test_dataset = NSLKDD_dataset_test()
 test_dataset_neg = NSLKDD_dataset_test(test_neg=True)
 n_input = total_dataset.get_input_size() + 1
 
 ae_pretrain_epochs = 150
-train_dnn_epochs = 200
+train_dnn_epochs = 100
 
 normal_label = 2
 
@@ -518,6 +519,9 @@ def train_full_model(load_pretrained_ae=False):
         y_t = y_t.cpu().detach().numpy()
 
         print(confusion_matrix(y_t, y_pred))
+        print(accuracy_score(y_true=y_t,y_pred=y_pred))
+        print(classification_report(y_true=y_t,y_pred=y_pred))
+        print("\n\n")
 
     test_neg_loader = DataLoader(test_dataset_neg, batch_size=test_dataset_neg.__len__(), shuffle=False)
     for batch_idx, (x, y_t, idx) in enumerate(test_neg_loader):
@@ -532,7 +536,10 @@ def train_full_model(load_pretrained_ae=False):
         y_t = y_t.cpu().detach().numpy()
 
         print(confusion_matrix(y_t, y_pred))
+        print(accuracy_score(y_true=y_t, y_pred=y_pred))
+        print(classification_report(y_true=y_t, y_pred=y_pred))
+        print("\n\n")
 
 
-add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False)
-train_full_model(load_pretrained_ae=False)
+add_cluster_label(load_cluster_centers_from_numpy=True, load_ds_from_numpy=True)
+train_full_model(load_pretrained_ae=True)
