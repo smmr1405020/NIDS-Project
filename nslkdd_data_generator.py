@@ -155,8 +155,8 @@ def load_nslkdd(train_data=True, test_data_neg=False):
     train_Y = np.array(train_Y).astype(np.int64)
 
     trYunique, trYcounts = np.unique(train_Y, return_counts=True)
-    print(trYunique)
-    print(trYcounts)
+    # print(trYunique)
+    # print(trYcounts)
 
     oversampling_count = dict()
     max_count = np.max(trYcounts)
@@ -178,11 +178,11 @@ def load_nslkdd(train_data=True, test_data_neg=False):
     #under = under_sampling.RandomUnderSampler(sampling_strategy=undersampling_count, random_state=42)
     #train_X, train_Y = under.fit_resample(train_X, train_Y)
 
-    print(train_X.shape)
-    print(train_Y.shape)
-    trYunique, trYcounts = np.unique(train_Y, return_counts=True)
-    print(trYunique)
-    print(trYcounts)
+    # print(train_X.shape)
+    # print(train_Y.shape)
+    # trYunique, trYcounts = np.unique(train_Y, return_counts=True)
+    # print(trYunique)
+    # print(trYcounts)
 
     weights = [max(trYcounts) / trYcounts[i] for i in range(len(trYcounts))]
     weights = np.array(weights)
