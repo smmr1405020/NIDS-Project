@@ -31,7 +31,7 @@ normal_label = 2
 
 def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=False):
     data_loader = DataLoader(total_dataset, batch_size=total_dataset.__len__(), shuffle=False)
-    clustering = OPTICS(min_samples=5)
+    clustering = OPTICS(min_samples=200)
 
     clusters = dict()
     firsttime = 1
@@ -94,8 +94,6 @@ def add_cluster_label(load_cluster_centers_from_numpy=False, load_ds_from_numpy=
             break
     else:
         cluster_centers = np.load(args.cluster_centers_np)
-
-    print(cluster_centers.shape[0])
 
     if not load_ds_from_numpy:
         print("Total Dataset Distance Calculation")
