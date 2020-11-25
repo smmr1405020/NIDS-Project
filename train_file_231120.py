@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.nn import Linear
-from nslkdd_datagen_231120 import get_training_data, NSLKDD_dataset_test, NSLKDD_dataset_train
+from nslkdd_datagen_231120 import get_training_data, NSLKDD_dataset_test, NSLKDD_dataset_train, cat_dict
 from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 from sklearn.tree import DecisionTreeClassifier
@@ -20,11 +20,11 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.01)
 test_dataset = NSLKDD_dataset_test()
 test_dataset_neg = NSLKDD_dataset_test(test_neg=True)
 
-ae_epoch = 200
+ae_epoch = 80
 pretrain_epoch = 100
 train_epoch = 150
 
@@ -33,7 +33,7 @@ labels = total_dataset.get_y()
 
 
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 50), random_state=0)
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 25), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")
@@ -66,17 +66,35 @@ def tree_work():
         if labels[i] == -1 and (int(cluster_assignment[i]) in soft_label_mapping.keys()):
             labels[i] = soft_label_mapping[cluster_assignment[i]]
 
+    cluster_to_labels_dict = dict()
+    for k, v in cluster_to_label_dict.items():
+        cl_labels = np.unique(np.array(v))
+        cl_labels = sorted(list(cl_labels))
+        if cl_labels[0] == -1:
+            cl_labels = cl_labels[1:]
+        cluster_to_labels_dict[k] = cl_labels
+
+    total_dataset.set_y(labels)
+
     dt_X = num_data
     dt_Y = cluster_assignment
 
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=40)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=80)
     clf.fit(dt_X, dt_Y)
 
     file = open('models/tree.pkl', 'wb')
     pickle.dump(clf, file)
+    file.close()
+
+    file = open('models/cluster_to_labels_dict.pkl', 'wb')
+    pickle.dump(cluster_to_labels_dict, file)
+    file.close()
+
+    file = open('models/clustering.pkl', 'wb')
+    pickle.dump(clustering, file)
     file.close()
 
     leaf_pred = clf.apply(dt_X)
@@ -219,12 +237,14 @@ def pretrain_leaf_dnn(save_path, epochs):
     model = leaf_dnn(32, int(max(labels)) + 1)
     model.to(device)
 
-    weights = torch.FloatTensor(total_dataset.get_weight()).to(device)
+    weights = torch.FloatTensor(labeled_dataset.get_weight()).to(device)
 
-    train_loader = DataLoader(total_dataset, batch_size=32, shuffle=True)  # soft label must be assigned
+    train_loader = DataLoader(labeled_dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     min_train_loss = 1000000
+    stop_flag = 1
+    prev_train_acc = 0
 
     for epoch in range(epochs):
         train_loss = 0.0
@@ -265,6 +285,15 @@ def pretrain_leaf_dnn(save_path, epochs):
         if epoch == 0 or min_train_loss > train_loss:
             min_train_loss = train_loss
             torch.save(model.state_dict(), save_path)
+
+        if train_acc - prev_train_acc > 0.01:
+            stop_flag = 0
+
+        if epoch % 20 == 0:
+            if stop_flag == 1:
+                break
+            stop_flag = 1
+            prev_train_acc = train_acc
 
     print("model saved to {}.".format(save_path))
 
@@ -283,8 +312,10 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
 
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    min_train_loss = 1000000
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    max_training_acc = 0
+    prev_train_acc = 0
+    stop_flag = 1
 
     for epoch in range(epochs):
         train_loss = 0.0
@@ -322,12 +353,21 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
             print("epoch {}; T loss={:.4f} T Accuracy={:.4f}".
                   format(epoch, train_loss, train_num_correct / train_num_examples))
 
-        if epoch == 0 or min_train_loss > train_loss:
-            min_train_loss = train_loss
+            if train_acc - prev_train_acc > 0.005:
+                stop_flag = 0
+
+        if epoch == 0 or max_training_acc > train_acc:
+            max_training_acc = train_acc
             torch.save(model.state_dict(), save_path)
 
         if train_acc == 1.0:
             break
+
+        if epoch % 20 == 0:
+            if epoch > 80 and stop_flag == 1:
+                break
+            stop_flag = 1
+            prev_train_acc = train_acc
 
     print("model saved to {}.".format(save_path))
 
@@ -362,16 +402,19 @@ def create_leaf_dnns():
         train_leaf_dnn(model, dataset, save_path, train_epoch)
 
 
-create_leaf_dnns()
+#create_leaf_dnns()
 
 
 def generate_result():
     clf = pickle.load(file=open('models/tree.pkl', 'rb'))
+    cluster_to_labels_dict = pickle.load(file=open('models/cluster_to_labels_dict.pkl', 'rb'))
+    clustering = pickle.load(file=open('models/clustering.pkl', 'rb'))
 
     test_X = test_dataset.get_x()
     test_Y = test_dataset.get_y()
 
     leaf_nodes = clf.apply(test_X)
+    cluster_assignment = clustering.predict(test_X)
 
     ae_model = AE(total_dataset.get_feature_shape(), 32)
     ae_model.load_state_dict(torch.load('models/train_ae'))
@@ -382,12 +425,28 @@ def generate_result():
     test_Y_pred = np.zeros(test_Y.shape)
 
     for i in range(len(leaf_nodes)):
-        leaf_model.load_state_dict(torch.load('models/leaf_models/leaf_' + str(leaf_nodes[i])))
+
+        if not os.path.exists('models/leaf_models/leaf_' + str(leaf_nodes[i])):
+            leaf_model.load_state_dict(torch.load('models/pretrain_leaf_dnn'))
+        else:
+            leaf_model.load_state_dict(torch.load('models/leaf_models/leaf_' + str(leaf_nodes[i])))
+
         leaf_model.to(device)
         x_emb = ae_model(torch.FloatTensor(test_X[i]).to(device))[1]
-        y = leaf_model(x_emb)
-        y = torch.argmax(y)
-        y_pred = y.cpu().detach().numpy()
+        y = torch.softmax(leaf_model(x_emb), dim=-1)
+        y_ = y.cpu().detach().numpy()
+        if int(cluster_assignment[i]) in cluster_to_labels_dict.keys():
+            allowable_labels = cluster_to_labels_dict[int(cluster_assignment[i])]
+            if len(allowable_labels) != 1 or allowable_labels[0] != int(cat_dict['Normal']):
+                mask = np.zeros(int(max(labels))+1)
+                for j in range(len(allowable_labels)):
+                    mask[int(allowable_labels[j])] = 1
+                y_pred = np.argmax(y_ * mask)
+            else:
+                y_pred = np.argmax(y_)
+        else:
+            y_pred = np.argmax(y_)
+
         test_Y_pred[i] = y_pred
 
     print(confusion_matrix(test_Y, test_Y_pred))

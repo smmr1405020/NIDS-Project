@@ -31,10 +31,21 @@ col_names = ["duration", "protocol_type", "service", "flag", "src_bytes",
              "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
              "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "label", "difficulty_level"]
 
+binary = True
+
 ATTACK_MAP = dict()
 for k, v in ATTACK_DICT.items():
     for att in v:
-        ATTACK_MAP[att] = k
+        if not binary:
+            ATTACK_MAP[att] = k
+        else:
+            if k == 'Normal':
+                ATTACK_MAP[att] = k
+            else:
+                ATTACK_MAP[att] = 'Attack'
+
+
+cat_dict = dict()
 
 
 def load_nslkdd(train_data=True, test_data_neg=False):
@@ -58,8 +69,6 @@ def load_nslkdd(train_data=True, test_data_neg=False):
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
     obj_cols = list(obj_cols)
-
-    cat_dict = dict()
 
     for col in obj_cols:
 
