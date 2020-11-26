@@ -43,7 +43,7 @@ for i in range(len(distinct_labels)):
 print(total_original_label_counts)
 
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 50), random_state=0)
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 25), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")
@@ -375,7 +375,7 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     ae_model.load_state_dict(torch.load('models/train_ae'))
     ae_model.to(device)
 
-    weights = torch.FloatTensor(total_dataset.get_weight()).to(device)
+    weights = torch.FloatTensor(dataset.get_weight()).to(device)
 
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 

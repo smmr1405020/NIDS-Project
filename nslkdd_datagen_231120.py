@@ -252,7 +252,9 @@ class NSLKDD_dataset_train(Dataset):
             if trYunique[i] != -1 and trYcounts[i] > max_count:
                 max_count = trYcounts[i]
 
-        weights = np.ones((int(max(trYunique)) + 1))
+        labels = list(cat_dict.values())
+
+        weights = np.ones((int(max(labels)) + 1))
         for i in range(len(trYunique)):
             if trYunique[i] >= 0:
                 weights[int(trYunique[i])] = max_count / trYcounts[i]
