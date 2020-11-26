@@ -14,8 +14,8 @@ from sklearn.tree import DecisionTreeClassifier
 import os, glob
 import pickle
 
-np.random.seed(12)
-torch.manual_seed(12)
+np.random.seed(12345)
+torch.manual_seed(12345)
 import random
 
 # 0.01: trainstop 0.005, cluster /25, min_imp_dec: 0.01, (80,100,150) , 5:15PM 26/11/20
@@ -23,7 +23,7 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.1)
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
 test_dataset = NSLKDD_dataset_test()
 test_dataset_neg = NSLKDD_dataset_test(test_neg=True)
 
@@ -375,7 +375,7 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     ae_model.load_state_dict(torch.load('models/train_ae'))
     ae_model.to(device)
 
-    weights = torch.FloatTensor(dataset.get_weight()).to(device)
+    weights = torch.FloatTensor(total_dataset.get_weight()).to(device)
 
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 
