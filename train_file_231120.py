@@ -43,7 +43,7 @@ for i in range(len(distinct_labels)):
 print(total_original_label_counts)
 
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 25), random_state=0)
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 125), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")

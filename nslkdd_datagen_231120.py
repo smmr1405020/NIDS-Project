@@ -50,14 +50,14 @@ cat_dict = dict()
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
+    df1 = pd.read_csv('Dataset_nsl_kdd/KDDTrain+.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
-    df1.dataframeName = 'KDDTrain+_20percent.txt'
+    df1.dataframeName = 'KDDTrain+.txt'
 
-    df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
+    df2 = pd.read_csv('Dataset_nsl_kdd/KDDTest+.txt', delimiter=',', header=None, names=col_names)
     df2.dataframeName = 'KDDTest+.txt'
 
-    df3 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest-21.txt', delimiter=',', header=None, names=col_names)
+    df3 = pd.read_csv('Dataset_nsl_kdd/KDDTest-21.txt', delimiter=',', header=None, names=col_names)
     df3.dataframeName = 'KDDTest-21.txt'
 
     df1.drop(['difficulty_level'], axis=1, inplace=True)
