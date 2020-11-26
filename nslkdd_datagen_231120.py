@@ -172,10 +172,15 @@ def load_nslkdd(train_data=True, test_data_neg=False):
 def get_training_data(label_ratio):
     train_X, train_Y = load_nslkdd(True)
 
+    trYunique = np.unique(train_Y)
+    got_once = np.zeros(len(trYunique))
+
     for i in range(len(train_Y)):
         p = np.random.rand()
-        if p > label_ratio:
+        if p > label_ratio and got_once[int(train_Y[i])] == 1:
             train_Y[i] = -1
+        else:
+            got_once[int(train_Y[i])] = 1
 
     labeled_data_X = []
     labeled_data_Y = []
