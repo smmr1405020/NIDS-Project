@@ -20,7 +20,7 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.01)
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.5)
 test_dataset = NSLKDD_dataset_test()
 test_dataset_neg = NSLKDD_dataset_test(test_neg=True)
 
@@ -33,7 +33,7 @@ labels = total_dataset.get_y()
 
 
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 25), random_state=0)
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 50), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")
@@ -65,6 +65,7 @@ def tree_work():
     for i in range(len(labels)):
         if labels[i] == -1 and (int(cluster_assignment[i]) in soft_label_mapping.keys()):
             labels[i] = soft_label_mapping[cluster_assignment[i]]
+            #labeled_dataset.add_sample(num_data[i], labels[i])
 
     cluster_to_labels_dict = dict()
     for k, v in cluster_to_label_dict.items():
@@ -113,6 +114,9 @@ def tree_work():
         leaf_dataset_Y[k] = np.array(leaf_dataset_Y[k])
 
     return leaf_dataset_X, leaf_dataset_Y
+
+
+leaf_dataset_X, leaf_dataset_Y = tree_work()
 
 
 class AE(nn.Module):
@@ -286,7 +290,7 @@ def pretrain_leaf_dnn(save_path, epochs):
             min_train_loss = train_loss
             torch.save(model.state_dict(), save_path)
 
-        if train_acc - prev_train_acc > 0.01:
+        if train_acc - prev_train_acc > 0.005:
             stop_flag = 0
 
         if epoch % 20 == 0:
@@ -313,7 +317,7 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    max_training_acc = 0
+    min_train_loss = 1000000
     prev_train_acc = 0
     stop_flag = 1
 
@@ -356,15 +360,15 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
             if train_acc - prev_train_acc > 0.005:
                 stop_flag = 0
 
-        if epoch == 0 or max_training_acc > train_acc:
-            max_training_acc = train_acc
+        if epoch == 0 or min_train_loss > train_loss:
+            min_train_loss = train_loss
             torch.save(model.state_dict(), save_path)
 
         if train_acc == 1.0:
             break
 
         if epoch % 20 == 0:
-            if epoch > 80 and stop_flag == 1:
+            if stop_flag == 1:
                 break
             stop_flag = 1
             prev_train_acc = train_acc
@@ -378,8 +382,6 @@ def create_leaf_dnns():
     filelist = glob.glob(os.path.join('models/leaf_models', "*"))
     for f in filelist:
         os.remove(f)
-
-    leaf_dataset_X, leaf_dataset_Y = tree_work()
 
     for key in leaf_dataset_Y.keys():
         dataset_X = leaf_dataset_X[key]
@@ -402,7 +404,7 @@ def create_leaf_dnns():
         train_leaf_dnn(model, dataset, save_path, train_epoch)
 
 
-#create_leaf_dnns()
+create_leaf_dnns()
 
 
 def generate_result():
@@ -438,7 +440,7 @@ def generate_result():
         if int(cluster_assignment[i]) in cluster_to_labels_dict.keys():
             allowable_labels = cluster_to_labels_dict[int(cluster_assignment[i])]
             if len(allowable_labels) != 1 or allowable_labels[0] != int(cat_dict['Normal']):
-                mask = np.zeros(int(max(labels))+1)
+                mask = np.zeros(int(max(labels)) + 1)
                 for j in range(len(allowable_labels)):
                     mask[int(allowable_labels[j])] = 1
                 y_pred = np.argmax(y_ * mask)

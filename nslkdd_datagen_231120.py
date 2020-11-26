@@ -31,7 +31,7 @@ col_names = ["duration", "protocol_type", "service", "flag", "src_bytes",
              "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
              "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "label", "difficulty_level"]
 
-binary = True
+binary = False
 
 ATTACK_MAP = dict()
 for k, v in ATTACK_DICT.items():
@@ -44,16 +44,15 @@ for k, v in ATTACK_DICT.items():
             else:
                 ATTACK_MAP[att] = 'Attack'
 
-
 cat_dict = dict()
 
 
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('Dataset_NSLKDD_2/KDDTrain+.txt', delimiter=',', header=None, names=col_names,
+    df1 = pd.read_csv('Dataset_NSLKDD_2/KDDTrain+_20Percent.txt', delimiter=',', header=None, names=col_names,
                       nrows=nRowsRead)
-    df1.dataframeName = 'KDDTrain+.txt'
+    df1.dataframeName = 'KDDTrain+_20percent.txt'
 
     df2 = pd.read_csv('./Dataset_NSLKDD_2/KDDTest+.txt', delimiter=',', header=None, names=col_names)
     df2.dataframeName = 'KDDTest+.txt'
@@ -254,6 +253,10 @@ class NSLKDD_dataset_train(Dataset):
                 weights[int(trYunique[i])] = max_count / trYcounts[i]
 
         return weights
+
+    def add_sample(self, sample_X, sample_Y):
+        self.x = np.concatenate([self.x, np.expand_dims(sample_X, axis=0)], axis=0)
+        self.y = np.append(self.y, sample_Y)
 
 
 class NSLKDD_dataset_test(Dataset):
