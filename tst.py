@@ -27,9 +27,9 @@ total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_rati
 test_dataset = dataset_test()
 test_dataset_neg = dataset_test(test_neg=True)
 
-ae_epoch = 20
-pretrain_epoch = 10
-train_epoch = 15
+ae_epoch = 80
+pretrain_epoch = 200
+train_epoch = 150
 
 num_data = total_dataset.get_x()
 labels = total_dataset.get_y()
@@ -40,10 +40,13 @@ for i in range(len(distinct_labels)):
     if distinct_labels[i] != -1:
         total_original_label_counts[distinct_labels[i]] = distinct_label_counts[i]
 
-print(total_original_label_counts)
+
+# print(total_original_label_counts)
+
 
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 1000), random_state=0)
+    '''
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")
@@ -59,9 +62,14 @@ def tree_work():
         if labels[j] != -1:
             cluster_to_label_dict.setdefault(cluster_assignment[j], []).append(labels[j])
 
+    print("Clusters:")
     label_to_cluster_dict = dict()
     for k, v in cluster_to_label_dict.items():
         cl_labels, cl_label_counts = np.unique(np.array(v), return_counts=True)
+        print(k)
+        print(cl_labels)
+        print(cl_label_counts)
+        print("\n")
         total_labeled_counts = np.sum(cl_label_counts)
 
         max_label = np.argmax(cl_label_counts)
@@ -124,19 +132,10 @@ def tree_work():
 
     total_dataset.set_y(labels)
 
+    '''
+
     dt_X = labeled_dataset.get_x()
     dt_Y = labeled_dataset.get_y()
-    firsttime = 1
-
-    # for j in range(len(num_data)):
-    #     if labels[j] != -1:
-    #         if firsttime == 1:
-    #             dt_X = np.expand_dims(num_data[j], axis=0)
-    #             dt_Y = np.array([labels[j]])
-    #             firsttime = 0
-    #         else:
-    #             dt_X = np.append(dt_X, [num_data[j]], axis=0)
-    #             dt_Y = np.append(dt_Y, [labels[j]])
 
     print(dt_X.shape)
     print(dt_Y.shape)
@@ -144,41 +143,51 @@ def tree_work():
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    clf = DecisionTreeClassifier(random_state=0, min_impurity_decrease=0.01)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=80)
     clf.fit(dt_X, dt_Y)
 
     print(clf.get_n_leaves())
 
-    file = open('models/tree.pkl', 'wb')
-    pickle.dump(clf, file)
-    file.close()
+    leaf_pred = clf.apply(dt_X)
 
-    file = open('models/cluster_to_labels_dict.pkl', 'wb')
-    pickle.dump(cluster_to_labels_dict, file)
-    file.close()
+    leaf_wise_labels = dict()
 
-    file = open('models/clustering.pkl', 'wb')
-    pickle.dump(clustering, file)
-    file.close()
+    for j in range(len(leaf_pred)):
+        leaf_wise_labels.setdefault(leaf_pred[j], []).append(dt_Y[j])
+
+    #print(leaf_wise_labels)
+
+    for k, v in leaf_wise_labels.items():
+        v_d = dict()
+        l_id, l_c = np.unique(np.array(v), return_counts=True)
+        for j in range(len(l_id)):
+            v_d[l_id[j]] = l_c[j]
+
+        leaf_wise_labels[k] = v_d
+
+    pprint.PrettyPrinter(indent=4, width=150).pprint(leaf_wise_labels)
+
+    dt_X = test_dataset.get_x()
+    dt_Y = test_dataset.get_y()
 
     leaf_pred = clf.apply(dt_X)
 
-    leaf_dataset_X = dict()
-    leaf_dataset_Y = dict()
+    leaf_wise_labels = dict()
 
-    for j in range(len(num_data)):
-        leaf = clf.apply([num_data[j]])[0]
-        if labels[j] != -1:
-            leaf_dataset_X.setdefault(leaf, []).append(num_data[j])
-            leaf_dataset_Y.setdefault(leaf, []).append(labels[j])
+    for j in range(len(leaf_pred)):
+        leaf_wise_labels.setdefault(leaf_pred[j], []).append(dt_Y[j])
 
-    for k, v in leaf_dataset_X.items():
-        leaf_dataset_X[k] = np.array(leaf_dataset_X[k])
-        leaf_dataset_Y[k] = np.array(leaf_dataset_Y[k])
+    # print(leaf_wise_labels)
 
-    return leaf_dataset_X, leaf_dataset_Y
+    for k, v in leaf_wise_labels.items():
+        v_d = dict()
+        l_id, l_c = np.unique(np.array(v), return_counts=True)
+        for j in range(len(l_id)):
+            v_d[l_id[j]] = l_c[j]
+
+        leaf_wise_labels[k] = v_d
+
+    pprint.PrettyPrinter(indent=4, width=150).pprint(leaf_wise_labels)
 
 
-leaf_dataset_X, leaf_dataset_Y = tree_work()
-
-
+tree_work()

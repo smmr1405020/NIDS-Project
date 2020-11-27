@@ -27,9 +27,9 @@ total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_rati
 test_dataset = dataset_test()
 test_dataset_neg = dataset_test(test_neg=True)
 
-ae_epoch = 20
-pretrain_epoch = 10
-train_epoch = 15
+ae_epoch = 80
+pretrain_epoch = 200
+train_epoch = 150
 
 num_data = total_dataset.get_x()
 labels = total_dataset.get_y()
@@ -40,18 +40,23 @@ for i in range(len(distinct_labels)):
     if distinct_labels[i] != -1:
         total_original_label_counts[distinct_labels[i]] = distinct_label_counts[i]
 
-print(total_original_label_counts)
+
+# print(total_original_label_counts)
 
 
-def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
-    all_clusters = dict()
+def tree_work(load_cluster_from_file=False):
 
-    print("Clustering Started.")
-    clustering.fit(num_data)
-    print("Clustering ended.")
+
+    if load_cluster_from_file:
+        clustering = pickle.load(file=open('models/clustering.pkl', 'rb'))
+    else:
+        clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
+        print("Clustering Started.")
+        clustering.fit(num_data)
+        print("Clustering ended.")
+
     cluster_assignment = clustering.labels_
-
+    all_clusters = dict()
     for j in range(len(cluster_assignment)):
         all_clusters.setdefault(cluster_assignment[j], []).append(num_data[j])
 
@@ -60,9 +65,14 @@ def tree_work():
         if labels[j] != -1:
             cluster_to_label_dict.setdefault(cluster_assignment[j], []).append(labels[j])
 
+    print("Clusters:")
     label_to_cluster_dict = dict()
     for k, v in cluster_to_label_dict.items():
         cl_labels, cl_label_counts = np.unique(np.array(v), return_counts=True)
+        print(k)
+        print(cl_labels)
+        print(cl_label_counts)
+        print("\n")
         total_labeled_counts = np.sum(cl_label_counts)
 
         max_label = np.argmax(cl_label_counts)
@@ -134,7 +144,7 @@ def tree_work():
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    clf = DecisionTreeClassifier(random_state=0, min_impurity_decrease=0.01)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=80)
     clf.fit(dt_X, dt_Y)
 
     print(clf.get_n_leaves())
@@ -151,9 +161,10 @@ def tree_work():
     pickle.dump(soft_label_mapping, file)
     file.close()
 
-    file = open('models/clustering.pkl', 'wb')
-    pickle.dump(clustering, file)
-    file.close()
+    if not load_cluster_from_file:
+        file = open('models/clustering.pkl', 'wb')
+        pickle.dump(clustering, file)
+        file.close()
 
     leaf_dataset_X = dict()
     leaf_dataset_Y = dict()
@@ -171,7 +182,7 @@ def tree_work():
     return leaf_dataset_X, leaf_dataset_Y
 
 
-leaf_dataset_X, leaf_dataset_Y = tree_work()
+leaf_dataset_X, leaf_dataset_Y = tree_work(load_cluster_from_file=True)
 
 
 class AE(nn.Module):
@@ -271,7 +282,7 @@ def train_ae(epochs, load_from_file=False, save_path='models/train_ae'):
     return model
 
 
-train_ae(ae_epoch, False)
+# train_ae(ae_epoch, False)
 
 
 class leaf_dnn(nn.Module):
@@ -302,8 +313,6 @@ def pretrain_leaf_dnn(save_path, epochs):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     min_train_loss = 1000000
-    stop_flag = 1
-    prev_train_acc = 0
 
     for epoch in range(epochs):
         train_loss = 0.0
@@ -345,21 +354,12 @@ def pretrain_leaf_dnn(save_path, epochs):
             min_train_loss = train_loss
             torch.save(model.state_dict(), save_path)
 
-        if train_acc - prev_train_acc > 0.005:
-            stop_flag = 0
-
-        if epoch % 20 == 0:
-            if stop_flag == 1:
-                break
-            stop_flag = 1
-            prev_train_acc = train_acc
-
     print("model saved to {}.".format(save_path))
 
     return model
 
 
-pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
+# pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
 
 
 def train_leaf_dnn(model, dataset, save_path, epochs):
@@ -367,12 +367,12 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     ae_model.load_state_dict(torch.load('models/train_ae'))
     ae_model.to(device)
 
-    weights = torch.FloatTensor(total_dataset.get_weight()).to(device)
+    weights = torch.FloatTensor(dataset.get_weight()).to(device)
 
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    max_train_acc = 0
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+    min_train_loss = 1000000
     prev_train_acc = 0
     stop_flag = 1
 
@@ -415,14 +415,14 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
             if train_acc - prev_train_acc > 0.005:
                 stop_flag = 0
 
-        if epoch == 0 or max_train_acc < train_acc:
-            max_train_acc = train_acc
+        if epoch == 0 or min_train_loss > train_loss:
+            min_train_loss = train_loss
             torch.save(model.state_dict(), save_path)
 
         if train_acc == 1.0:
             break
 
-        if epoch % 20 == 0:
+        if epoch % 30 == 0:
             if stop_flag == 1:
                 break
             stop_flag = 1
@@ -431,7 +431,6 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     print("model saved to {}.".format(save_path))
 
     return model
-
 
 
 def create_leaf_dnns():

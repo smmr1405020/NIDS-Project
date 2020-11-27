@@ -46,6 +46,7 @@ for k, v in NSLKDD_ATTACK_DICT.items():
 
 cat_dict = dict()
 
+max_weight = 100
 
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
@@ -181,6 +182,8 @@ def load_unsw_nb15(train_data=True):
     # print(df1['attack_cat'].unique())
 
     df1.sample(frac=1)
+    df1.drop(['id'], axis=1, inplace=True)
+    df2.drop(['id'], axis=1, inplace=True)
 
     if not binary:
         df1.drop(['label'], axis=1, inplace=True)
@@ -269,8 +272,10 @@ def load_unsw_nb15(train_data=True):
 def get_training_data(label_ratio):
     train_X, train_Y = load_unsw_nb15(True)
 
-    trYunique = np.unique(train_Y)
+    trYunique, trYcounts = np.unique(train_Y,return_counts=True)
     got_once = np.zeros(len(trYunique))
+
+    max_weight = np.max(trYcounts) / np.min(trYcounts)
 
     for i in range(len(train_Y)):
         p = np.random.rand()
@@ -349,10 +354,12 @@ class dataset_train(Dataset):
             if trYunique[i] != -1 and trYcounts[i] > max_count:
                 max_count = trYcounts[i]
 
-        weights = np.ones((int(max(trYunique)) + 1))
+        labels = list(cat_dict.values())
+        no_labels = len(labels)
+        weights = np.ones(no_labels)
         for i in range(len(trYunique)):
-            if trYunique[i] >= 0:
-                weights[int(trYunique[i])] = max_count / trYcounts[i]
+            if trYunique[i] >= 0 and trYcounts[i] > 0:
+                weights[int(trYunique[i])] = min(max_weight, max_count / trYcounts[i])
 
         return weights
 
