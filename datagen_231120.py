@@ -275,6 +275,7 @@ def get_training_data(label_ratio):
     trYunique, trYcounts = np.unique(train_Y,return_counts=True)
     got_once = np.zeros(len(trYunique))
 
+    global max_weight
     max_weight = np.max(trYcounts) / np.min(trYcounts)
 
     for i in range(len(train_Y)):
