@@ -10,38 +10,51 @@ import random
 
 random.seed(12345)
 
-
 binary = False
 
+col_names_unsw = ['id', 'dur', 'proto', 'service', 'state', 'spkts', 'dpkts', 'sbytes',
+             'dbytes', 'rate', 'sttl', 'dttl', 'sload', 'dload', 'sloss', 'dloss',
+             'sinpkt', 'dinpkt', 'sjit', 'djit', 'swin', 'stcpb', 'dtcpb', 'dwin',
+             'tcprtt', 'synack', 'ackdat', 'smean', 'dmean', 'trans_depth',
+             'response_body_len', 'ct_srv_src', 'ct_state_ttl', 'ct_dst_ltm',
+             'ct_src_dport_ltm', 'ct_dst_sport_ltm', 'ct_dst_src_ltm',
+             'is_ftp_login', 'ct_ftp_cmd', 'ct_flw_http_mthd', 'ct_src_ltm',
+             'ct_srv_dst', 'is_sm_ips_ports', 'attack_cat', 'label']
 
-def load_nslkdd(train_data=True, test_data_neg=False):
-    nRowsRead = 10000  # specify 'None' if want to read whole file
+cat_dict = dict()
+
+
+def load_unsw_nb15(train_data=True):
+    nRowsRead = None  # specify 'None' if want to read whole file
 
     df1 = pd.read_csv('Dataset_UNSW_NB15/UNSW_NB15_train.csv', delimiter=',',
                       nrows=nRowsRead)
     df1.dataframeName = 'UNSW_NB15_train.csv'
 
-    df2 = pd.read_csv('Dataset_UNSW_NB15/UNSW_NB15_test.csv', delimiter=',', header=None, names=col_names)
-    df2.dataframeName = 'KDDTest+.txt'
+    df2 = pd.read_csv('Dataset_UNSW_NB15/UNSW_NB15_test.csv', delimiter=',')
+    df2.dataframeName = 'UNSW_NB15_test.csv'
 
-    df3 = pd.read_csv('Dataset_nsl_kdd/KDDTest-21.txt', delimiter=',', header=None, names=col_names)
-    df3.dataframeName = 'KDDTest-21.txt'
-
-    df1.drop(['difficulty_level'], axis=1, inplace=True)
-    df2.drop(['difficulty_level'], axis=1, inplace=True)
-    df3.drop(['difficulty_level'], axis=1, inplace=True)
+    # print(df1['attack_cat'].unique())
 
     df1.sample(frac=1)
 
     obj_cols = df1.select_dtypes(include=['object']).copy().columns
     obj_cols = list(obj_cols)
 
+    if binary == False:
+        df1.drop(['label'], axis=1, inplace=True)
+        df2.drop(['label'], axis=1, inplace=True)
+        lbl = 'attack_map'
+    else:
+        df1.drop(['attack_map'], axis=1, inplace=True)
+        df2.drop(['attack_map'], axis=1, inplace=True)
+        lbl = 'label'
+
     for col in obj_cols:
 
-        if col != 'label':
+        if col != lbl:
             onehot_cols_train = pd.get_dummies(df1[col], prefix=col, dtype='float64')
             onehot_cols_test = pd.get_dummies(df2[col], prefix=col, dtype='float64')
-            onehot_cols_test2 = pd.get_dummies(df3[col], prefix=col, dtype='float64')
 
             idx = 0
             for find_col_idx in range(len(list(df1.columns))):
@@ -58,23 +71,12 @@ def load_nslkdd(train_data=True, test_data_neg=False):
                 else:
                     df2.insert(idx + itr + 1, new_col, onehot_cols_test[new_col].values, True)
 
-                if new_col not in list(onehot_cols_test2.columns):
-                    zero_col = np.zeros(df3.values.shape[0])
-                    df3.insert(idx + itr + 1, new_col, zero_col, True)
-                else:
-                    df3.insert(idx + itr + 1, new_col, onehot_cols_test2[new_col].values, True)
-
                 itr += 1
 
             del df1[col]
             del df2[col]
-            del df3[col]
 
         else:
-
-            df1[col] = df1[col].map(ATTACK_MAP)
-            df2[col] = df2[col].map(ATTACK_MAP)
-            df3[col] = df3[col].map(ATTACK_MAP)
 
             df1[col] = df1[col].astype('category')
 
@@ -95,19 +97,6 @@ def load_nslkdd(train_data=True, test_data_neg=False):
 
             df2[col] = df2[col].astype('int64')
 
-            df3[col] = df3[col].astype('category')
-            df3 = df3.replace({col: cat_dict})
-
-            for i in range(len(df3[col])):
-                if type(df3[col][i]) is str:
-                    df3.at[i, col] = len(cat_dict) + 1
-
-            df3[col] = df3[col].astype('int64')
-
-    # df1 = df1[df1.labels != cat_dict['Normal']]
-
-    normal_label = cat_dict['Normal']
-
     train_X = df1.values[:, :-1]
     train_Y = df1.values[:, -1]
 
@@ -116,139 +105,24 @@ def load_nslkdd(train_data=True, test_data_neg=False):
 
     test_Y = np.array(test_Y).astype(np.int64)
 
-    test_X2 = df3.values[:, :-1]
-    test_Y2 = df3.values[:, -1]
-
-    test_Y2 = np.array(test_Y2).astype(np.int64)
-
     scaler = StandardScaler()
     scaler.fit(train_X)
 
     train_X = scaler.transform(train_X)
     test_X = scaler.transform(test_X)
-    test_X2 = scaler.transform(test_X2)
+
+    # print(train_X.shape)
+    # print(train_Y.shape)
+    # print(test_X.shape)
+    # print(test_Y.shape)
 
     if train_data:
         return train_X, train_Y
-    elif not test_data_neg:
+    else:
         return test_X, test_Y
-    else:
-        return test_X2, test_Y2
 
 
-def get_training_data(label_ratio):
-    train_X, train_Y = load_nslkdd(True)
-
-    trYunique = np.unique(train_Y)
-    got_once = np.zeros(len(trYunique))
-
-    for i in range(len(train_Y)):
-        p = np.random.rand()
-        if p > label_ratio and got_once[int(train_Y[i])] == 1:
-            train_Y[i] = -1
-        else:
-            got_once[int(train_Y[i])] = 1
-
-    labeled_data_X = []
-    labeled_data_Y = []
-    unlabeled_data_X = []
-    unlabeled_data_Y = []
-    for i in range(len(train_Y)):
-        if train_Y[i] != -1:
-            labeled_data_X.append(list(train_X[i]))
-            labeled_data_Y.append(train_Y[i])
-        else:
-            unlabeled_data_X.append(list(train_X[i]))
-            unlabeled_data_Y.append(train_Y[i])
-
-    labeled_data = np.array(labeled_data_X), np.array(labeled_data_Y)
-    unlabeled_data = np.array(unlabeled_data_X), np.array(unlabeled_data_Y)
-
-    if len(unlabeled_data[1]) != 0 and len(labeled_data[1]) != 0:
-        total_data_X = np.append(labeled_data[0], unlabeled_data[0], axis=0)
-        total_data_Y = np.append(labeled_data[1], unlabeled_data[1], axis=0)
-    elif len(unlabeled_data[1]) == 0:
-        total_data_X = labeled_data[0]
-        total_data_Y = labeled_data[1]
-    else:
-        total_data_X = unlabeled_data[0]
-        total_data_Y = unlabeled_data[1]
-
-    total_data = total_data_X, total_data_Y
-
-    total_dataset = NSLKDD_dataset_train(total_data)
-    labeled_dataset = NSLKDD_dataset_train(labeled_data)
-    unlabeled_dataset = NSLKDD_dataset_train(unlabeled_data)
-
-    return total_dataset, labeled_dataset, unlabeled_dataset
 
 
-class NSLKDD_dataset_train(Dataset):
 
-    def __init__(self, data):
-        self.x = data[0]
-        self.y = data[1]
-
-    def set_x(self, new_x):
-        self.x = new_x
-
-    def get_x(self):
-        return self.x
-
-    def set_y(self, new_y):
-        self.y = new_y
-
-    def get_y(self):
-        return self.y
-
-    def get_feature_shape(self):
-        return self.x.shape[1]
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        return torch.from_numpy(np.array(self.x[idx])), torch.LongTensor(np.array(self.y[idx])), \
-               torch.LongTensor([idx]).squeeze()
-
-    def get_weight(self):
-
-        trYunique, trYcounts = np.unique(self.y, return_counts=True)
-        max_count = 0
-        for i in range(len(trYcounts)):
-            if trYunique[i] != -1 and trYcounts[i] > max_count:
-                max_count = trYcounts[i]
-
-        weights = np.ones((int(max(trYunique)) + 1))
-        for i in range(len(trYunique)):
-            if trYunique[i] >= 0:
-                weights[int(trYunique[i])] = max_count / trYcounts[i]
-
-        return weights
-
-    def add_sample(self, sample_X, sample_Y):
-        self.x = np.concatenate([self.x, np.expand_dims(sample_X, axis=0)], axis=0)
-        self.y = np.append(self.y, sample_Y)
-
-
-class NSLKDD_dataset_test(Dataset):
-
-    def __init__(self, test_neg=False):
-        self.x, self.y = load_nslkdd(False, test_data_neg=test_neg)
-        self.feature_size = self.x.shape[1]
-
-    def __len__(self):
-        return self.x.shape[0]
-
-    def set_x(self, new_x):
-        self.x = new_x
-
-    def get_x(self):
-        return self.x
-
-    def get_y(self):
-        return self.y
-
-    def __getitem__(self, idx):
-        return torch.from_numpy(np.array(self.x[idx])), torch.from_numpy(np.array(self.y[idx])), \
-               torch.LongTensor([idx]).squeeze()
+#load_unsw_nb15()

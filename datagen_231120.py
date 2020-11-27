@@ -10,7 +10,7 @@ import random
 
 random.seed(12345)
 
-ATTACK_DICT = {
+NSLKDD_ATTACK_DICT = {
     'DoS': ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm',
             'worm'],
     'Probe': ['ipsweep', 'mscan', 'nmap', 'portsweep', 'saint', 'satan'],
@@ -20,7 +20,7 @@ ATTACK_DICT = {
     'Normal': ['normal']
 }
 
-col_names = ["duration", "protocol_type", "service", "flag", "src_bytes",
+nslkdd_col_names = ["duration", "protocol_type", "service", "flag", "src_bytes",
              "dst_bytes", "land", "wrong_fragment", "urgent", "hot", "num_failed_logins",
              "logged_in", "num_compromised", "root_shell", "su_attempted", "num_root",
              "num_file_creations", "num_shells", "num_access_files", "num_outbound_cmds",
@@ -33,16 +33,16 @@ col_names = ["duration", "protocol_type", "service", "flag", "src_bytes",
 
 binary = False
 
-ATTACK_MAP = dict()
-for k, v in ATTACK_DICT.items():
+NSLKDD_ATTACK_MAP = dict()
+for k, v in NSLKDD_ATTACK_DICT.items():
     for att in v:
         if not binary:
-            ATTACK_MAP[att] = k
+            NSLKDD_ATTACK_MAP[att] = k
         else:
             if k == 'Normal':
-                ATTACK_MAP[att] = k
+                NSLKDD_ATTACK_MAP[att] = k
             else:
-                ATTACK_MAP[att] = 'Attack'
+                NSLKDD_ATTACK_MAP[att] = 'Attack'
 
 cat_dict = dict()
 
@@ -50,14 +50,14 @@ cat_dict = dict()
 def load_nslkdd(train_data=True, test_data_neg=False):
     nRowsRead = None  # specify 'None' if want to read whole file
 
-    df1 = pd.read_csv('Dataset_nsl_kdd/KDDTrain+.txt', delimiter=',', header=None, names=col_names,
+    df1 = pd.read_csv('Dataset_nsl_kdd/KDDTrain+.txt', delimiter=',', header=None, names=nslkdd_col_names,
                       nrows=nRowsRead)
     df1.dataframeName = 'KDDTrain+.txt'
 
-    df2 = pd.read_csv('Dataset_nsl_kdd/KDDTest+.txt', delimiter=',', header=None, names=col_names)
+    df2 = pd.read_csv('Dataset_nsl_kdd/KDDTest+.txt', delimiter=',', header=None, names=nslkdd_col_names)
     df2.dataframeName = 'KDDTest+.txt'
 
-    df3 = pd.read_csv('Dataset_nsl_kdd/KDDTest-21.txt', delimiter=',', header=None, names=col_names)
+    df3 = pd.read_csv('Dataset_nsl_kdd/KDDTest-21.txt', delimiter=',', header=None, names=nslkdd_col_names)
     df3.dataframeName = 'KDDTest-21.txt'
 
     df1.drop(['difficulty_level'], axis=1, inplace=True)
@@ -105,9 +105,9 @@ def load_nslkdd(train_data=True, test_data_neg=False):
 
         else:
 
-            df1[col] = df1[col].map(ATTACK_MAP)
-            df2[col] = df2[col].map(ATTACK_MAP)
-            df3[col] = df3[col].map(ATTACK_MAP)
+            df1[col] = df1[col].map(NSLKDD_ATTACK_MAP)
+            df2[col] = df2[col].map(NSLKDD_ATTACK_MAP)
+            df3[col] = df3[col].map(NSLKDD_ATTACK_MAP)
 
             df1[col] = df1[col].astype('category')
 
@@ -168,9 +168,106 @@ def load_nslkdd(train_data=True, test_data_neg=False):
     else:
         return test_X2, test_Y2
 
+def load_unsw_nb15(train_data=True):
+    nRowsRead = None  # specify 'None' if want to read whole file
+
+    df1 = pd.read_csv('Dataset_UNSW_NB15/UNSW_NB15_train.csv', delimiter=',',
+                      nrows=nRowsRead)
+    df1.dataframeName = 'UNSW_NB15_train.csv'
+
+    df2 = pd.read_csv('Dataset_UNSW_NB15/UNSW_NB15_test.csv', delimiter=',')
+    df2.dataframeName = 'UNSW_NB15_test.csv'
+
+    # print(df1['attack_cat'].unique())
+
+    df1.sample(frac=1)
+
+    if not binary:
+        df1.drop(['label'], axis=1, inplace=True)
+        df2.drop(['label'], axis=1, inplace=True)
+        lbl = 'attack_cat'
+    else:
+        df1.drop(['attack_map'], axis=1, inplace=True)
+        df2.drop(['attack_map'], axis=1, inplace=True)
+        lbl = 'label'
+
+    obj_cols = df1.select_dtypes(include=['object']).copy().columns
+    obj_cols = list(obj_cols)
+
+    for col in obj_cols:
+
+        if col != lbl:
+            onehot_cols_train = pd.get_dummies(df1[col], prefix=col, dtype='float64')
+            onehot_cols_test = pd.get_dummies(df2[col], prefix=col, dtype='float64')
+
+            idx = 0
+            for find_col_idx in range(len(list(df1.columns))):
+                if list(df1.columns)[find_col_idx] == col:
+                    idx = find_col_idx
+
+            itr = 0
+            for new_col in list(onehot_cols_train.columns):
+                df1.insert(idx + itr + 1, new_col, onehot_cols_train[new_col].values, True)
+
+                if new_col not in list(onehot_cols_test.columns):
+                    zero_col = np.zeros(df2.values.shape[0])
+                    df2.insert(idx + itr + 1, new_col, zero_col, True)
+                else:
+                    df2.insert(idx + itr + 1, new_col, onehot_cols_test[new_col].values, True)
+
+                itr += 1
+
+            del df1[col]
+            del df2[col]
+
+        else:
+
+            df1[col] = df1[col].astype('category')
+
+            cat_dict_r = dict(enumerate(df1[col].cat.categories))
+
+            for key, value in cat_dict_r.items():
+                cat_dict[value] = key
+
+            df1 = df1.replace({col: cat_dict})
+            df1[col] = df1[col].astype('int64')
+
+            df2[col] = df2[col].astype('category')
+            df2 = df2.replace({col: cat_dict})
+
+            for i in range(len(df2[col])):
+                if type(df2[col][i]) is str:
+                    df2.at[i, col] = len(cat_dict) + 1
+
+            df2[col] = df2[col].astype('int64')
+
+    train_X = df1.values[:, :-1]
+    train_Y = df1.values[:, -1]
+
+    test_X = df2.values[:, :-1]
+    test_Y = df2.values[:, -1]
+
+    test_Y = np.array(test_Y).astype(np.int64)
+
+    scaler = StandardScaler()
+    scaler.fit(train_X)
+
+    train_X = scaler.transform(train_X)
+    test_X = scaler.transform(test_X)
+
+    # print(train_X.shape)
+    # print(train_Y.shape)
+    # print(test_X.shape)
+    # print(test_Y.shape)
+
+    if train_data:
+        return train_X, train_Y
+    else:
+        return test_X, test_Y
+
 
 def get_training_data(label_ratio):
-    train_X, train_Y = load_nslkdd(True)
+    train_X, train_Y = load_unsw_nb15(True)
 
     trYunique = np.unique(train_Y)
     got_once = np.zeros(len(trYunique))
@@ -209,14 +306,14 @@ def get_training_data(label_ratio):
 
     total_data = total_data_X, total_data_Y
 
-    total_dataset = NSLKDD_dataset_train(total_data)
-    labeled_dataset = NSLKDD_dataset_train(labeled_data)
-    unlabeled_dataset = NSLKDD_dataset_train(unlabeled_data)
+    total_dataset = dataset_train(total_data)
+    labeled_dataset = dataset_train(labeled_data)
+    unlabeled_dataset = dataset_train(unlabeled_data)
 
     return total_dataset, labeled_dataset, unlabeled_dataset
 
 
-class NSLKDD_dataset_train(Dataset):
+class dataset_train(Dataset):
 
     def __init__(self, data):
         self.x = data[0]
@@ -264,10 +361,10 @@ class NSLKDD_dataset_train(Dataset):
         self.y = np.append(self.y, sample_Y)
 
 
-class NSLKDD_dataset_test(Dataset):
+class dataset_test(Dataset):
 
     def __init__(self, test_neg=False):
-        self.x, self.y = load_nslkdd(False, test_data_neg=test_neg)
+        self.x, self.y = load_unsw_nb15(False)
         self.feature_size = self.x.shape[1]
 
     def __len__(self):

@@ -7,8 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.nn import Linear
-from nslkdd_datagen_231120 import get_training_data, NSLKDD_dataset_test, NSLKDD_dataset_train, cat_dict
-from sklearn.metrics import confusion_matrix
+from datagen_231120 import get_training_data, dataset_test, dataset_train, cat_dict
+from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.cluster import KMeans
 from sklearn.tree import DecisionTreeClassifier
 import os, glob
@@ -24,12 +24,12 @@ import random
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
-test_dataset = NSLKDD_dataset_test()
-test_dataset_neg = NSLKDD_dataset_test(test_neg=True)
+test_dataset = dataset_test()
+test_dataset_neg = dataset_test(test_neg=True)
 
-ae_epoch = 80
-pretrain_epoch = 100
-train_epoch = 150
+ae_epoch = 200
+pretrain_epoch = 300
+train_epoch = 300
 
 num_data = total_dataset.get_x()
 labels = total_dataset.get_y()
@@ -42,8 +42,9 @@ for i in range(len(distinct_labels)):
 
 print(total_original_label_counts)
 
+
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 125), random_state=0)
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 1000), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")
@@ -124,19 +125,19 @@ def tree_work():
 
     total_dataset.set_y(labels)
 
-    dt_X = None
-    dt_Y = None
-    firsttime = 1
-
-    for j in range(len(num_data)):
-        if labels[j] != -1:
-            if firsttime == 1:
-                dt_X = np.expand_dims(num_data[j], axis=0)
-                dt_Y = np.array([labels[j]])
-                firsttime = 0
-            else:
-                dt_X = np.append(dt_X, [num_data[j]], axis=0)
-                dt_Y = np.append(dt_Y, [labels[j]])
+    dt_X = labeled_dataset.get_x()
+    dt_Y = labeled_dataset.get_y()
+    # firsttime = 1
+    #
+    # for j in range(len(num_data)):
+    #     if labels[j] != -1:
+    #         if firsttime == 1:
+    #             dt_X = np.expand_dims(num_data[j], axis=0)
+    #             dt_Y = np.array([labels[j]])
+    #             firsttime = 0
+    #         else:
+    #             dt_X = np.append(dt_X, [num_data[j]], axis=0)
+    #             dt_Y = np.append(dt_Y, [labels[j]])
 
     print(dt_X.shape)
     print(dt_Y.shape)
@@ -179,7 +180,7 @@ def tree_work():
     return leaf_dataset_X, leaf_dataset_Y
 
 
-leaf_dataset_X, leaf_dataset_Y = tree_work()
+# leaf_dataset_X, leaf_dataset_Y = tree_work()
 
 
 class AE(nn.Module):
@@ -279,7 +280,7 @@ def train_ae(epochs, load_from_file=False, save_path='models/train_ae'):
     return model
 
 
-train_ae(ae_epoch, False)
+# train_ae(ae_epoch, False)
 
 
 class leaf_dnn(nn.Module):
@@ -367,7 +368,7 @@ def pretrain_leaf_dnn(save_path, epochs):
     return model
 
 
-pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
+# pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
 
 
 def train_leaf_dnn(model, dataset, save_path, epochs):
@@ -441,33 +442,34 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     return model
 
 
-def create_leaf_dnns():
-    filelist = glob.glob(os.path.join('models/leaf_models', "*"))
-    for f in filelist:
-        os.remove(f)
+#
+# def create_leaf_dnns():
+#     filelist = glob.glob(os.path.join('models/leaf_models', "*"))
+#     for f in filelist:
+#         os.remove(f)
+#
+#     for key in leaf_dataset_Y.keys():
+#         dataset_X = leaf_dataset_X[key]
+#         dataset_Y = leaf_dataset_Y[key]
+#
+#         print(key)
+#         print(dataset_X.shape)
+#         print(dataset_Y.shape)
+#         print("\n")
+#
+#         data = dataset_X, dataset_Y
+#         dataset = dataset_train(data)
+#
+#         model = leaf_dnn(32, int(max(labels)) + 1)
+#         model.load_state_dict(torch.load('models/pretrain_leaf_dnn'))
+#         model.to(device)
+#
+#         save_path = "models/leaf_models/leaf_" + str(key)
+#
+#         train_leaf_dnn(model, dataset, save_path, train_epoch)
+#
 
-    for key in leaf_dataset_Y.keys():
-        dataset_X = leaf_dataset_X[key]
-        dataset_Y = leaf_dataset_Y[key]
-
-        print(key)
-        print(dataset_X.shape)
-        print(dataset_Y.shape)
-        print("\n")
-
-        data = dataset_X, dataset_Y
-        dataset = NSLKDD_dataset_train(data)
-
-        model = leaf_dnn(32, int(max(labels)) + 1)
-        model.load_state_dict(torch.load('models/pretrain_leaf_dnn'))
-        model.to(device)
-
-        save_path = "models/leaf_models/leaf_" + str(key)
-
-        train_leaf_dnn(model, dataset, save_path, train_epoch)
-
-
-create_leaf_dnns()
+# create_leaf_dnns()
 
 
 def generate_result():
@@ -480,6 +482,8 @@ def generate_result():
 
     leaf_nodes = clf.apply(test_X)
     cluster_assignment = clustering.predict(test_X)
+
+    print("done")
 
     ae_model = AE(total_dataset.get_feature_shape(), 32)
     ae_model.load_state_dict(torch.load('models/train_ae'))
@@ -501,29 +505,34 @@ def generate_result():
 
         model_dict[int(spl[1])] = leaf_model
 
+    leaf_pred_dict = dict()
+    for k, v in model_dict.items():
+        leaf_model = v
+        X_emb = ae_model(torch.FloatTensor(test_X).to(device))[1]
+        Y = torch.softmax(leaf_model(X_emb), dim=-1)
+        Y_ = Y.cpu().detach().numpy()
+        leaf_pred_dict[k] = Y_
+
     test_Y_pred = np.zeros(test_Y.shape)
 
     for i in range(len(leaf_nodes)):
-
-        leaf_model = model_dict[leaf_nodes[i]]
-        x_emb = ae_model(torch.FloatTensor(test_X[i]).to(device))[1]
-        y = torch.softmax(leaf_model(x_emb), dim=-1)
-        y_ = y.cpu().detach().numpy()
-        if int(cluster_assignment[i]) in cluster_to_labels_dict.keys():
-            allowable_labels = cluster_to_labels_dict[int(cluster_assignment[i])]
-            if len(allowable_labels) != 1 or allowable_labels[0] != int(cat_dict['Normal']):
-                mask = np.zeros(int(max(labels)) + 1)
-                for j in range(len(allowable_labels)):
-                    mask[int(allowable_labels[j])] = 1
-                y_pred = np.argmax(y_ * mask)
-            else:
-                y_pred = np.argmax(y_)
-        else:
-            y_pred = np.argmax(y_)
+        y_ = leaf_pred_dict[leaf_nodes[i]][i]
+        # if int(cluster_assignment[i]) in cluster_to_labels_dict.keys():
+        #     allowable_labels = cluster_to_labels_dict[int(cluster_assignment[i])]
+        #     if len(allowable_labels) != 1 or allowable_labels[0] != int(cat_dict['Normal']):
+        #         mask = np.zeros(int(max(labels)) + 1)
+        #         for j in range(len(allowable_labels)):
+        #             mask[int(allowable_labels[j])] = 1
+        #         y_pred = np.argmax(y_ * mask)
+        #     else:
+        #         y_pred = np.argmax(y_)
+        # else:
+        y_pred = np.argmax(y_)
 
         test_Y_pred[i] = y_pred
 
     print(confusion_matrix(test_Y, test_Y_pred))
+    print(classification_report(test_Y, test_Y_pred))
 
 
 generate_result()
