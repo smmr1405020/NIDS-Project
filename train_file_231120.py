@@ -27,9 +27,9 @@ total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_rati
 test_dataset = dataset_test()
 test_dataset_neg = dataset_test(test_neg=True)
 
-ae_epoch = 200
-pretrain_epoch = 300
-train_epoch = 300
+ae_epoch = 20
+pretrain_epoch = 10
+train_epoch = 15
 
 num_data = total_dataset.get_x()
 labels = total_dataset.get_y()
@@ -44,7 +44,7 @@ print(total_original_label_counts)
 
 
 def tree_work():
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 1000), random_state=0)
+    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
     all_clusters = dict()
 
     print("Clustering Started.")
@@ -127,17 +127,6 @@ def tree_work():
 
     dt_X = labeled_dataset.get_x()
     dt_Y = labeled_dataset.get_y()
-    # firsttime = 1
-    #
-    # for j in range(len(num_data)):
-    #     if labels[j] != -1:
-    #         if firsttime == 1:
-    #             dt_X = np.expand_dims(num_data[j], axis=0)
-    #             dt_Y = np.array([labels[j]])
-    #             firsttime = 0
-    #         else:
-    #             dt_X = np.append(dt_X, [num_data[j]], axis=0)
-    #             dt_Y = np.append(dt_Y, [labels[j]])
 
     print(dt_X.shape)
     print(dt_Y.shape)
@@ -154,15 +143,17 @@ def tree_work():
     pickle.dump(clf, file)
     file.close()
 
-    file = open('models/cluster_to_labels_dict.pkl', 'wb')
-    pickle.dump(cluster_to_labels_dict, file)
+    for k in list(all_clusters.keys()):
+        if int(k) not in soft_label_mapping.keys():
+            soft_label_mapping[int(k)] = int(cat_dict['Normal'])
+
+    file = open('models/soft_label_mapping.pkl', 'wb')
+    pickle.dump(soft_label_mapping, file)
     file.close()
 
     file = open('models/clustering.pkl', 'wb')
     pickle.dump(clustering, file)
     file.close()
-
-    leaf_pred = clf.apply(dt_X)
 
     leaf_dataset_X = dict()
     leaf_dataset_Y = dict()
@@ -180,7 +171,7 @@ def tree_work():
     return leaf_dataset_X, leaf_dataset_Y
 
 
-# leaf_dataset_X, leaf_dataset_Y = tree_work()
+leaf_dataset_X, leaf_dataset_Y = tree_work()
 
 
 class AE(nn.Module):
@@ -280,7 +271,7 @@ def train_ae(epochs, load_from_file=False, save_path='models/train_ae'):
     return model
 
 
-# train_ae(ae_epoch, False)
+train_ae(ae_epoch, False)
 
 
 class leaf_dnn(nn.Module):
@@ -368,7 +359,7 @@ def pretrain_leaf_dnn(save_path, epochs):
     return model
 
 
-# pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
+pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
 
 
 def train_leaf_dnn(model, dataset, save_path, epochs):
@@ -381,7 +372,7 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)  # soft label must be assigned
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    min_train_loss = 1000000
+    max_train_acc = 0
     prev_train_acc = 0
     stop_flag = 1
 
@@ -424,8 +415,8 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
             if train_acc - prev_train_acc > 0.005:
                 stop_flag = 0
 
-        if epoch == 0 or min_train_loss > train_loss:
-            min_train_loss = train_loss
+        if epoch == 0 or max_train_acc < train_acc:
+            max_train_acc = train_acc
             torch.save(model.state_dict(), save_path)
 
         if train_acc == 1.0:
@@ -442,39 +433,39 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
     return model
 
 
-#
-# def create_leaf_dnns():
-#     filelist = glob.glob(os.path.join('models/leaf_models', "*"))
-#     for f in filelist:
-#         os.remove(f)
-#
-#     for key in leaf_dataset_Y.keys():
-#         dataset_X = leaf_dataset_X[key]
-#         dataset_Y = leaf_dataset_Y[key]
-#
-#         print(key)
-#         print(dataset_X.shape)
-#         print(dataset_Y.shape)
-#         print("\n")
-#
-#         data = dataset_X, dataset_Y
-#         dataset = dataset_train(data)
-#
-#         model = leaf_dnn(32, int(max(labels)) + 1)
-#         model.load_state_dict(torch.load('models/pretrain_leaf_dnn'))
-#         model.to(device)
-#
-#         save_path = "models/leaf_models/leaf_" + str(key)
-#
-#         train_leaf_dnn(model, dataset, save_path, train_epoch)
-#
 
-# create_leaf_dnns()
+def create_leaf_dnns():
+    filelist = glob.glob(os.path.join('models/leaf_models', "*"))
+    for f in filelist:
+        os.remove(f)
+
+    for key in leaf_dataset_Y.keys():
+        dataset_X = leaf_dataset_X[key]
+        dataset_Y = leaf_dataset_Y[key]
+
+        print(key)
+        print(dataset_X.shape)
+        print(dataset_Y.shape)
+        print("\n")
+
+        data = dataset_X, dataset_Y
+        dataset = dataset_train(data)
+
+        model = leaf_dnn(32, int(max(labels)) + 1)
+        model.load_state_dict(torch.load('models/pretrain_leaf_dnn'))
+        model.to(device)
+
+        save_path = "models/leaf_models/leaf_" + str(key)
+
+        train_leaf_dnn(model, dataset, save_path, train_epoch)
+
+
+create_leaf_dnns()
 
 
 def generate_result():
     clf = pickle.load(file=open('models/tree.pkl', 'rb'))
-    cluster_to_labels_dict = pickle.load(file=open('models/cluster_to_labels_dict.pkl', 'rb'))
+    soft_label_mapping = pickle.load(file=open('models/soft_label_mapping.pkl', 'rb'))
     clustering = pickle.load(file=open('models/clustering.pkl', 'rb'))
 
     test_X = test_dataset.get_x()
@@ -515,21 +506,12 @@ def generate_result():
 
     test_Y_pred = np.zeros(test_Y.shape)
 
-    for i in range(len(leaf_nodes)):
-        y_ = leaf_pred_dict[leaf_nodes[i]][i]
-        # if int(cluster_assignment[i]) in cluster_to_labels_dict.keys():
-        #     allowable_labels = cluster_to_labels_dict[int(cluster_assignment[i])]
-        #     if len(allowable_labels) != 1 or allowable_labels[0] != int(cat_dict['Normal']):
-        #         mask = np.zeros(int(max(labels)) + 1)
-        #         for j in range(len(allowable_labels)):
-        #             mask[int(allowable_labels[j])] = 1
-        #         y_pred = np.argmax(y_ * mask)
-        #     else:
-        #         y_pred = np.argmax(y_)
-        # else:
+    for j in range(len(leaf_nodes)):
+        y_ = leaf_pred_dict[leaf_nodes[j]][j]
+        if soft_label_mapping[cluster_assignment[j]] != cat_dict['Normal']:
+            y_[int(cat_dict['Normal'])] = 0
         y_pred = np.argmax(y_)
-
-        test_Y_pred[i] = y_pred
+        test_Y_pred[j] = y_pred
 
     print(confusion_matrix(test_Y, test_Y_pred))
     print(classification_report(test_Y, test_Y_pred))
