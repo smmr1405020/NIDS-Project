@@ -40,17 +40,14 @@ for i in range(len(distinct_labels)):
     if distinct_labels[i] != -1:
         total_original_label_counts[distinct_labels[i]] = distinct_label_counts[i]
 
-
-# print(total_original_label_counts)
+print(total_original_label_counts)
 
 
 def tree_work(load_cluster_from_file=False):
-
-
     if load_cluster_from_file:
         clustering = pickle.load(file=open('models/clustering.pkl', 'rb'))
     else:
-        clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
+        clustering = KMeans(n_clusters=int(total_dataset.__len__() / 125), random_state=0)
         print("Clustering Started.")
         clustering.fit(num_data)
         print("Clustering ended.")
@@ -144,7 +141,7 @@ def tree_work(load_cluster_from_file=False):
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=80)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=63)
     clf.fit(dt_X, dt_Y)
 
     print(clf.get_n_leaves())
@@ -182,7 +179,7 @@ def tree_work(load_cluster_from_file=False):
     return leaf_dataset_X, leaf_dataset_Y
 
 
-leaf_dataset_X, leaf_dataset_Y = tree_work(load_cluster_from_file=True)
+leaf_dataset_X, leaf_dataset_Y = tree_work(load_cluster_from_file=False)
 
 
 class AE(nn.Module):
@@ -282,7 +279,7 @@ def train_ae(epochs, load_from_file=False, save_path='models/train_ae'):
     return model
 
 
-# train_ae(ae_epoch, False)
+train_ae(ae_epoch, False)
 
 
 class leaf_dnn(nn.Module):
@@ -359,7 +356,7 @@ def pretrain_leaf_dnn(save_path, epochs):
     return model
 
 
-# pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
+pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
 
 
 def train_leaf_dnn(model, dataset, save_path, epochs):
@@ -421,12 +418,6 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
 
         if train_acc == 1.0:
             break
-
-        if epoch % 30 == 0:
-            if stop_flag == 1:
-                break
-            stop_flag = 1
-            prev_train_acc = train_acc
 
     print("model saved to {}.".format(save_path))
 

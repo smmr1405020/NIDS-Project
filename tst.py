@@ -41,7 +41,7 @@ for i in range(len(distinct_labels)):
         total_original_label_counts[distinct_labels[i]] = distinct_label_counts[i]
 
 
-# print(total_original_label_counts)
+print(total_original_label_counts)
 
 
 def tree_work():
@@ -143,7 +143,7 @@ def tree_work():
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=80)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=63)
     clf.fit(dt_X, dt_Y)
 
     print(clf.get_n_leaves())

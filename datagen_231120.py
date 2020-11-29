@@ -11,12 +11,11 @@ import random
 random.seed(12345)
 
 NSLKDD_ATTACK_DICT = {
-    'DoS': ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm',
-            'worm'],
+    'DoS': ['apache2', 'back', 'land', 'neptune', 'mailbomb', 'pod', 'processtable', 'smurf', 'teardrop', 'udpstorm'],
     'Probe': ['ipsweep', 'mscan', 'nmap', 'portsweep', 'saint', 'satan'],
-    'Privilege': ['buffer_overflow', 'loadmodule', 'perl', 'ps', 'rootkit', 'sqlattack', 'xterm'],
-    'Access': ['ftp_write', 'guess_passwd', 'httptunnel', 'imap', 'multihop', 'named', 'phf', 'sendmail',
-               'snmpgetattack', 'snmpguess', 'spy', 'warezclient', 'warezmaster', 'xlock', 'xsnoop'],
+    'Privilege': ['buffer_overflow', 'loadmodule', 'perl', 'ps', 'rootkit', 'sqlattack', 'xterm','httptunnel'],
+    'Access': ['ftp_write', 'guess_passwd', 'imap', 'multihop', 'named', 'phf', 'sendmail',
+               'snmpgetattack', 'snmpguess', 'spy', 'warezclient', 'warezmaster', 'xlock', 'xsnoop','worm'],
     'Normal': ['normal']
 }
 
@@ -270,7 +269,7 @@ def load_unsw_nb15(train_data=True):
 
 
 def get_training_data(label_ratio):
-    train_X, train_Y = load_unsw_nb15(True)
+    train_X, train_Y = load_nslkdd(True)
 
     trYunique, trYcounts = np.unique(train_Y,return_counts=True)
     got_once = np.zeros(len(trYunique))
@@ -372,7 +371,7 @@ class dataset_train(Dataset):
 class dataset_test(Dataset):
 
     def __init__(self, test_neg=False):
-        self.x, self.y = load_unsw_nb15(False)
+        self.x, self.y = load_nslkdd(False,test_data_neg=test_neg)
         self.feature_size = self.x.shape[1]
 
     def __len__(self):
