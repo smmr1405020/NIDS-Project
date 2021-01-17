@@ -1,6 +1,3 @@
-import pprint
-import time
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -23,7 +20,7 @@ import random
 
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.1)
 test_dataset = dataset_test()
 test_dataset_neg = dataset_test(test_neg=True)
 
@@ -40,14 +37,15 @@ for i in range(len(distinct_labels)):
     if distinct_labels[i] != -1:
         total_original_label_counts[distinct_labels[i]] = distinct_label_counts[i]
 
-print(total_original_label_counts)
+
+# print(total_original_label_counts)
 
 
 def tree_work(load_cluster_from_file=False):
     if load_cluster_from_file:
         clustering = pickle.load(file=open('models/clustering.pkl', 'rb'))
     else:
-        clustering = KMeans(n_clusters=int(total_dataset.__len__() / 125), random_state=0)
+        clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
         print("Clustering Started.")
         clustering.fit(num_data)
         print("Clustering ended.")
@@ -62,17 +60,26 @@ def tree_work(load_cluster_from_file=False):
         if labels[j] != -1:
             cluster_to_label_dict.setdefault(cluster_assignment[j], []).append(labels[j])
 
-    print("Clusters:")
+    #print("Clusters:")
     label_to_cluster_dict = dict()
     for k, v in cluster_to_label_dict.items():
-        cl_labels, cl_label_counts = np.unique(np.array(v), return_counts=True)
-        print(k)
-        print(cl_labels)
-        print(cl_label_counts)
-        print("\n")
+        cl_labels, cl_label_counts = np.unique(np.array(v), return_counts=True)  # labeled member count in each cluster
+        # print(k)
+        # print(cl_labels)
+        # print(cl_label_counts)
+        # print("\n")
         total_labeled_counts = np.sum(cl_label_counts)
 
         max_label = np.argmax(cl_label_counts)
+
+        '''
+        If a cluster contains more than 10% of all samples of a label present in the training dataset, it is considered 
+        important for this label.
+        If the majority label is not the normal label and there are no other labels for which this cluster is important,
+        having more than 50% of the labeled members would be enough for soft labeling
+        If the majority label is the normal label, then all labeled members must be normal for soft labeling.
+        In any other case, we do not soft label.
+        '''
 
         imp_for_label = []
         for label, total_label_count in total_original_label_counts.items():
@@ -104,15 +111,28 @@ def tree_work(load_cluster_from_file=False):
                         size = len(v)
                         label_to_cluster_dict.setdefault(label, []).append([k, size])
 
+    '''
+    clusters that belong to a particular label, after soft labeling.
+    '''
     soft_label_mapping = dict()
     for k, v in label_to_cluster_dict.items():
         for cluster_index in v:
             soft_label_mapping[cluster_index[0]] = k
 
+    '''
+    soft labeling particular unlabeled samples.
+    Also add this to labeled dataset.
+    '''
+
     for j in range(len(labels)):
         if labels[j] == -1 and (int(cluster_assignment[j]) in soft_label_mapping.keys()):
             labels[j] = soft_label_mapping[cluster_assignment[j]]
             labeled_dataset.add_sample(num_data[j], labels[j])
+
+
+    '''
+    checking total labeled and soft labeled members.
+    '''
 
     total_soft_label_counts = dict()
     distinct_slabels, distinct_slabel_counts = np.unique(labels, return_counts=True)
@@ -135,16 +155,20 @@ def tree_work(load_cluster_from_file=False):
     dt_X = labeled_dataset.get_x()
     dt_Y = labeled_dataset.get_y()
 
+    print("labeled members dimensions:")
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    print(dt_X.shape)
-    print(dt_Y.shape)
-
-    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=63)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=40)
     clf.fit(dt_X, dt_Y)
 
+    print("No. of leaves of decision tree:")
     print(clf.get_n_leaves())
+
+    '''
+    saving decision tree, cluster membership info (this is just to skip the clustering step for our faster use) and soft
+    labeling info.
+    '''
 
     file = open('models/tree.pkl', 'wb')
     pickle.dump(clf, file)
@@ -166,6 +190,10 @@ def tree_work(load_cluster_from_file=False):
     leaf_dataset_X = dict()
     leaf_dataset_Y = dict()
 
+    '''
+    finding out corresponding leaf for each training sample.
+    '''
+
     for j in range(len(num_data)):
         leaf = clf.apply([num_data[j]])[0]
         if labels[j] != -1:
@@ -178,9 +206,15 @@ def tree_work(load_cluster_from_file=False):
 
     return leaf_dataset_X, leaf_dataset_Y
 
+'''
+The dictionary of X-Y training dataset for each individual leaf.
+'''
 
-leaf_dataset_X, leaf_dataset_Y = tree_work(load_cluster_from_file=False)
+leaf_dataset_X, leaf_dataset_Y = tree_work(load_cluster_from_file=True)
 
+'''
+undercomplete autoencoder for embedding.
+'''
 
 class AE(nn.Module):
 
@@ -279,7 +313,7 @@ def train_ae(epochs, load_from_file=False, save_path='models/train_ae'):
     return model
 
 
-train_ae(ae_epoch, False)
+# train_ae(ae_epoch, False)
 
 
 class leaf_dnn(nn.Module):
@@ -295,6 +329,9 @@ class leaf_dnn(nn.Module):
 
         return out_2
 
+'''
+pretraining using labeled and soft labeled dataset.
+'''
 
 def pretrain_leaf_dnn(save_path, epochs):
     ae_model = AE(total_dataset.get_feature_shape(), 32)
@@ -356,8 +393,11 @@ def pretrain_leaf_dnn(save_path, epochs):
     return model
 
 
-pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
+# pretrain_leaf_dnn('models/pretrain_leaf_dnn', pretrain_epoch)
 
+'''
+training dataset of an individual leaf.
+'''
 
 def train_leaf_dnn(model, dataset, save_path, epochs):
     ae_model = AE(total_dataset.get_feature_shape(), 32)
@@ -419,10 +459,19 @@ def train_leaf_dnn(model, dataset, save_path, epochs):
         if train_acc == 1.0:
             break
 
+        if epoch % 30 == 0:
+            if stop_flag == 1:
+                break
+            stop_flag = 1
+            prev_train_acc = train_acc
+
     print("model saved to {}.".format(save_path))
 
     return model
 
+'''
+training all leaves.
+'''
 
 def create_leaf_dnns():
     filelist = glob.glob(os.path.join('models/leaf_models', "*"))
@@ -469,6 +518,10 @@ def generate_result():
     ae_model = AE(total_dataset.get_feature_shape(), 32)
     ae_model.load_state_dict(torch.load('models/train_ae'))
     ae_model.to(device)
+
+    '''
+    If model does not exist for a particular leaf, use the default pretrained model.
+    '''
 
     model_dict = dict()
     leaf_model_files = os.listdir('models/leaf_models')

@@ -1,6 +1,3 @@
-import pprint
-import time
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -20,10 +17,9 @@ import random
 
 # 0.01: trainstop 0.005, cluster /25, min_imp_dec: 0.01, (80,100,150) , 5:15PM 26/11/20
 
-
 random.seed(12345)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=1.0)
+total_dataset, labeled_dataset, unlabeled_dataset = get_training_data(label_ratio=0.01)
 test_dataset = dataset_test()
 test_dataset_neg = dataset_test(test_neg=True)
 
@@ -44,16 +40,17 @@ for i in range(len(distinct_labels)):
 print(total_original_label_counts)
 
 
-def tree_work():
-    '''
-    clustering = KMeans(n_clusters=int(total_dataset.__len__() / 175), random_state=0)
-    all_clusters = dict()
+def tree_work(load_cluster_from_file=False):
+    if load_cluster_from_file:
+        clustering = pickle.load(file=open('models/clustering.pkl', 'rb'))
+    else:
+        clustering = KMeans(n_clusters=int(total_dataset.__len__() / 125), random_state=0)
+        print("Clustering Started.")
+        clustering.fit(num_data)
+        print("Clustering ended.")
 
-    print("Clustering Started.")
-    clustering.fit(num_data)
-    print("Clustering ended.")
     cluster_assignment = clustering.labels_
-
+    all_clusters = dict()
     for j in range(len(cluster_assignment)):
         all_clusters.setdefault(cluster_assignment[j], []).append(num_data[j])
 
@@ -132,8 +129,6 @@ def tree_work():
 
     total_dataset.set_y(labels)
 
-    '''
-
     dt_X = labeled_dataset.get_x()
     dt_Y = labeled_dataset.get_y()
 
@@ -143,51 +138,28 @@ def tree_work():
     print(dt_X.shape)
     print(dt_Y.shape)
 
-    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=63)
+    clf = DecisionTreeClassifier(random_state=0, max_leaf_nodes=80)
     clf.fit(dt_X, dt_Y)
 
     print(clf.get_n_leaves())
 
-    leaf_pred = clf.apply(dt_X)
-
-    leaf_wise_labels = dict()
-
-    for j in range(len(leaf_pred)):
-        leaf_wise_labels.setdefault(leaf_pred[j], []).append(dt_Y[j])
-
-    #print(leaf_wise_labels)
-
-    for k, v in leaf_wise_labels.items():
-        v_d = dict()
-        l_id, l_c = np.unique(np.array(v), return_counts=True)
-        for j in range(len(l_id)):
-            v_d[l_id[j]] = l_c[j]
-
-        leaf_wise_labels[k] = v_d
-
-    pprint.PrettyPrinter(indent=4, width=150).pprint(leaf_wise_labels)
-
-    dt_X = test_dataset.get_x()
-    dt_Y = test_dataset.get_y()
-
-    leaf_pred = clf.apply(dt_X)
-
-    leaf_wise_labels = dict()
-
-    for j in range(len(leaf_pred)):
-        leaf_wise_labels.setdefault(leaf_pred[j], []).append(dt_Y[j])
-
-    # print(leaf_wise_labels)
-
-    for k, v in leaf_wise_labels.items():
-        v_d = dict()
-        l_id, l_c = np.unique(np.array(v), return_counts=True)
-        for j in range(len(l_id)):
-            v_d[l_id[j]] = l_c[j]
-
-        leaf_wise_labels[k] = v_d
-
-    pprint.PrettyPrinter(indent=4, width=150).pprint(leaf_wise_labels)
+    file = open('models/tree.pkl', 'wb')
+    pickle.dump(clf, file)
+    file.close()
 
 
-tree_work()
+tree_work(load_cluster_from_file=True)
+
+def generate_result():
+    clf = pickle.load(file=open('models/tree.pkl', 'rb'))
+
+    test_X = test_dataset_neg.get_x()
+    test_Y = test_dataset_neg.get_y()
+
+    test_Y_pred = clf.predict(test_X)
+
+    print(confusion_matrix(test_Y, test_Y_pred))
+    print(classification_report(test_Y, test_Y_pred))
+
+
+generate_result()
